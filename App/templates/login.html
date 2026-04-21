@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIRAPE – Iniciar Sesión</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-deep: #0a2540;
+      --blue-mid:  #1a6b8a;
+      --blue-soft: #e8f4f8;
+      --teal:      #00b4d8;
+      --teal-light:#caf0f8;
+      --red-alert: #e63946;
+      --white:     #ffffff;
+      --gray-50:   #f8fafc;
+      --gray-100:  #f1f5f9;
+      --gray-200:  #e2e8f0;
+      --gray-400:  #94a3b8;
+      --gray-600:  #475569;
+      --gray-800:  #1e293b;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+      --shadow-lg: 0 12px 40px rgba(0,0,0,.14);
+      --radius:    12px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--gray-50); color: var(--gray-800); min-height: 100vh; }
+
+    #page-login {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .login-brand {
+      background: var(--blue-deep);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 56px;
+    }
+    .login-brand::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 60% -10%, #1a6b8a55, transparent),
+        radial-gradient(ellipse 50% 50% at -10% 80%, #00b4d830, transparent);
+    }
+    .brand-cross { position: absolute; top: 40px; right: 40px; width: 120px; height: 120px; opacity: .08; }
+    .brand-cross::before, .brand-cross::after { content: ''; position: absolute; background: white; border-radius: 6px; }
+    .brand-cross::before { width: 30px; height: 100%; left: 45px; top: 0; }
+    .brand-cross::after  { width: 100%; height: 30px; top: 45px; left: 0; }
+    .brand-circle { position: absolute; border-radius: 50%; border: 1px solid rgba(255,255,255,.06); }
+    .bc1 { width: 500px; height: 500px; top: -120px; right: -180px; }
+    .bc2 { width: 320px; height: 320px; top: 60px;  right: -60px; }
+    .bc3 { width: 200px; height: 200px; top: 160px; right: 40px; }
+    .brand-tag { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--teal); margin-bottom: 16px; position: relative; }
+    .brand-title { font-family: 'DM Serif Display', serif; font-size: 42px; line-height: 1.15; color: white; position: relative; margin-bottom: 20px; }
+    .brand-title em { color: var(--teal); font-style: normal; }
+    .brand-sub { font-size: 14px; color: rgba(255,255,255,.55); line-height: 1.7; max-width: 340px; position: relative; }
+    .brand-equipo { margin-top: 40px; display: flex; align-items: center; gap: 10px; position: relative; }
+    .brand-equipo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(0,180,216,.5); } 50%{ box-shadow:0 0 0 8px rgba(0,180,216,0); } }
+    .brand-equipo span { font-size: 12px; color: rgba(255,255,255,.45); letter-spacing: 1px; }
+
+    .login-form-wrap { display: flex; align-items: center; justify-content: center; padding: 48px; background: white; }
+    .login-card { width: 100%; max-width: 400px; animation: fadeUp .5s ease both; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:none; } }
+    .login-card-header { margin-bottom: 40px; }
+    .login-card-header h2 { font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--blue-deep); margin-bottom: 6px; }
+    .login-card-header p { font-size: 14px; color: var(--gray-400); }
+
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--gray-600); margin-bottom: 8px; }
+    .form-group input { width: 100%; padding: 14px 16px; border: 1.5px solid var(--gray-200); border-radius: var(--radius); font-family: 'DM Sans', sans-serif; font-size: 15px; color: var(--gray-800); background: var(--gray-50); transition: border-color .2s, box-shadow .2s; outline: none; }
+    .form-group input:focus { border-color: var(--teal); background: white; box-shadow: 0 0 0 4px rgba(0,180,216,.1); }
+
+    .btn-login { width: 100%; padding: 15px; background: var(--blue-deep); color: white; border: none; border-radius: var(--radius); font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .2s, transform .15s, box-shadow .2s; margin-top: 8px; }
+    .btn-login:hover { background: var(--blue-mid); box-shadow: 0 6px 20px rgba(10,37,64,.25); transform: translateY(-1px); }
+    .btn-login:active { transform: none; }
+
+    .login-hint { margin-top: 28px; padding: 14px 16px; background: var(--blue-soft); border-radius: var(--radius); font-size: 12.5px; color: var(--blue-mid); text-align: center; line-height: 1.6; }
+    .login-hint strong { display: block; margin-bottom: 2px; }
+
+    .error-msg { margin-bottom: 20px; padding: 12px 16px; background: #fdecea; border-radius: var(--radius); font-size: 13px; color: var(--red-alert); font-weight: 500; }
+
+    @media (max-width: 900px) {
+      #page-login { grid-template-columns: 1fr; }
+      .login-brand { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="page-login">
+
+  <div class="login-brand">
+    <div class="brand-cross"></div>
+    <div class="brand-circle bc1"></div>
+    <div class="brand-circle bc2"></div>
+    <div class="brand-circle bc3"></div>
+    <p class="brand-tag">Cruz Roja Mexicana</p>
+    <h1 class="brand-title">Sistema de Registro<br>de <em>Emergencias</em><br>Pediátricas</h1>
+    <p class="brand-sub">Gestión integral de eventos de emergencia, pacientes y personal médico en tiempo real.</p>
+    <div class="brand-equipo">
+      <div class="brand-equipo-dot"></div>
+      <span>SIRAPE &nbsp;·&nbsp; UDEM 2025</span>
+    </div>
+  </div>
+
+  <div class="login-form-wrap">
+    <div class="login-card">
+      <div class="login-card-header">
+        <h2>Bienvenido</h2>
+        <p>Inicia sesión para continuar</p>
+      </div>
+
+      {% if error %}
+      <div class="error-msg">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label for="usuario">Usuario</label>
+          <input type="text" id="usuario" name="usuario" placeholder="Ingresa tu usuario" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Contraseña</label>
+          <input type="password" id="password" name="password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-login">Iniciar Sesión</button>
+      </form>
+
+      <div class="login-hint">
+        <strong>Acceso de demostración</strong>
+        Usuario: <b>admin</b> &nbsp;·&nbsp; Contraseña: <b>1234</b>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

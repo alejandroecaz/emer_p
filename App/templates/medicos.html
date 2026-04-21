@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – Médicos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <style>
+    .nav-user-wrap {
+      position: relative;
+      cursor: pointer;
+    }
+    .nav-user-wrap::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      right: 0;
+      width: 100%;
+      height: 14px;
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px;
+      overflow: hidden;
+      z-index: 200;
+    }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px; font-size: 13px;
+      color: #e63946; font-weight: 600;
+      text-decoration: none; transition: background .15s;
+    }
+    .nav-dropdown a:hover { background: #fdecea; }
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: white; border-radius: 10px;
+      padding: 2rem; width: 90%; max-width: 700px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-bottom: 1.5rem;
+    }
+    .modal-close {
+      background: none; border: none;
+      font-size: 1.3rem; cursor: pointer; color: #666;
+    }
+    .acciones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-icon { padding: 0.3rem 0.7rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+    .btn-editar { background: #e8f0fe; color: #1a73e8; }
+    .btn-baja { background: #fde8e8; color: #c0392b; }
+    .btn-reactivar { background: #e8fde8; color: #27ae60; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-full { grid-column: 1 / -1; }
+    .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
+    .checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #444; }
+    .form-group input, .form-group select {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px; box-sizing: border-box;
+    }
+    .form-actions { display: flex; gap: 12px; margin-top: 1.5rem; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+  <div id="page-dashboard" style="display:flex; flex-direction:column; min-height:100vh;">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('registrar_emergencia') }}" class="nav-tab">Registrar Emergencia</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab active">Médicos</a>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="badge {% if category == 'exito' %}badge-green{% else %}badge-red{% endif %}"
+                 style="margin-bottom:16px; padding:10px 16px; border-radius:10px; font-size:13px;">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div class="section-header" style="justify-content:space-between;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <h2 class="section-title">Personal Médico</h2>
+          <span class="section-sub">Gestión del personal médico registrado</span>
+        </div>
+        <button onclick="document.getElementById('modal-registrar').style.display='flex'"
+                class="btn-submit" style="border:none; cursor:pointer;">+ Nuevo Médico</button>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid" style="margin-bottom:24px;">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon">👨‍⚕️</div>
+          <div class="kpi-value">{{ medicos | length }}</div>
+          <div class="kpi-label">Total Médicos</div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-value">{{ medicos | selectattr('estado', 'equalto', 'Activo') | list | length }}</div>
+          <div class="kpi-label">Activos</div>
+        </div>
+        <div class="kpi-card kpi-red">
+          <div class="kpi-icon">🚫</div>
+          <div class="kpi-value">{{ medicos | selectattr('estado', 'equalto', 'Inactivo') | list | length }}</div>
+          <div class="kpi-label">Inactivos</div>
+        </div>
+      </div>
+
+      <!-- Tabla -->
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre Completo</th>
+                <th>Cédula</th>
+                <th>Cargo</th>
+                <th>Turno</th>
+                <th>Especialidad(es)</th>
+                <th>Correo</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if medicos and medicos|length > 0 %}
+                {% for m in medicos %}
+                <tr>
+                  <td class="td-id">{{ m.id_personal }}</td>
+                  <td class="td-name">{{ m.nombre_completo }}</td>
+                  <td>{{ m.cedula_profesional or '—' }}</td>
+                  <td>{{ m.cargo or '—' }}</td>
+                  <td>{{ m.turno or '—' }}</td>
+                  <td>{{ m.especialidades or '—' }}</td>
+                  <td>{{ m.correo_institucional }}</td>
+                  <td>
+                    <span class="badge {% if m.estado == 'Activo' %}badge-green{% else %}badge-red{% endif %}">
+                      {{ m.estado }}
+                    </span>
+                  </td>
+                  <td class="acciones">
+                    <button class="btn-icon btn-editar"
+                      onclick="abrirModalEditar('{{ m.id_personal }}')">✏️ Editar</button>
+                    <form method="POST" action="{{ url_for('cambiar_estado_medico') }}"
+                          style="display:inline;"
+                          onsubmit="return confirm('¿Confirmas el cambio de estado?')">
+                      <input type="hidden" name="id_personal" value="{{ m.id_personal }}">
+                      {% if m.estado == 'Activo' %}
+                        <input type="hidden" name="estado" value="Inactivo">
+                        <button type="submit" class="btn-icon btn-baja">🚫 Dar de baja</button>
+                      {% else %}
+                        <input type="hidden" name="estado" value="Activo">
+                        <button type="submit" class="btn-icon btn-reactivar">✅ Reactivar</button>
+                      {% endif %}
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="9" style="text-align:center; color:var(--gray-400); padding:40px; font-size:14px;">
+                    No hay médicos registrados.
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ==================== MODAL REGISTRAR ==================== -->
+  <div id="modal-registrar" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Nuevo Médico</h3>
+        <button onclick="document.getElementById('modal-registrar').style.display='none'" class="modal-close">✕</button>
+      </div>
+      <form method="POST" action="{{ url_for('insertar_medico') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>ID Personal *</label>
+            <input type="text" name="id_personal" placeholder="Ej: MED-010" required>
+          </div>
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" name="nombre" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Paterno *</label>
+            <input type="text" name="apellido_paterno" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Materno</label>
+            <input type="text" name="apellido_materno">
+          </div>
+          <div class="form-group">
+            <label>Cédula Profesional</label>
+            <input type="text" name="cedula">
+          </div>
+          <div class="form-group">
+            <label>RFC</label>
+            <input type="text" name="rfc" maxlength="13">
+          </div>
+          <div class="form-group">
+            <label>CURP</label>
+            <input type="text" name="curp" maxlength="18">
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="text" name="telefono">
+          </div>
+          <div class="form-group">
+            <label>Correo Institucional *</label>
+            <input type="email" name="correo" required>
+          </div>
+          <div class="form-group">
+            <label>Cargo *</label>
+            <select name="id_cargo" required>
+              <option value="">-- Selecciona --</option>
+              {% for c in cargos %}
+                <option value="{{ c.id_cargo }}">{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Turno</label>
+            <select name="id_turno">
+              <option value="">-- Ninguno --</option>
+              {% for t in turnos %}
+                <option value="{{ t.id_turno }}">{{ t.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group form-full">
+            <label>Especialidad(es)</label>
+            <div class="checkbox-grid">
+              {% for e in especialidades %}
+              <label class="checkbox-label">
+                <input type="checkbox" name="especialidades" value="{{ e.id_especialidad }}">
+                {{ e.nombre }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="document.getElementById('modal-registrar').style.display='none'" class="btn-submit" style="background:#aaa;">Cancelar</button>
+          <button type="submit" class="btn-submit">Registrar Médico</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- ==================== MODAL EDITAR ==================== -->
+  <div id="modal-editar" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Editar Médico</h3>
+        <button onclick="cerrarModal()" class="modal-close">✕</button>
+      </div>
+      <form method="POST" action="{{ url_for('editar_medico') }}">
+        <input type="hidden" name="id_personal" id="edit-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" name="nombre" id="edit-nombre" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Paterno *</label>
+            <input type="text" name="apellido_paterno" id="edit-apellido_paterno" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Materno</label>
+            <input type="text" name="apellido_materno" id="edit-apellido_materno">
+          </div>
+          <div class="form-group">
+            <label>Cédula</label>
+            <input type="text" name="cedula" id="edit-cedula">
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="text" name="telefono" id="edit-telefono">
+          </div>
+          <div class="form-group">
+            <label>Correo *</label>
+            <input type="email" name="correo" id="edit-correo" required>
+          </div>
+          <div class="form-group">
+            <label>Cargo *</label>
+            <select name="id_cargo" id="edit-cargo" required>
+              {% for c in cargos %}
+                <option value="{{ c.id_cargo }}">{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Turno</label>
+            <select name="id_turno" id="edit-turno">
+              <option value="">-- Ninguno --</option>
+              {% for t in turnos %}
+                <option value="{{ t.id_turno }}">{{ t.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group form-full">
+            <label>Especialidad(es)</label>
+            <div class="checkbox-grid">
+              {% for e in especialidades %}
+              <label class="checkbox-label">
+                <input type="checkbox" name="especialidades"
+                       value="{{ e.id_especialidad }}" class="esp-check">
+                {{ e.nombre }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="cerrarModal()" class="btn-submit" style="background:#aaa;">Cancelar</button>
+          <button type="submit" class="btn-submit">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function abrirModalEditar(idPersonal) {
+      fetch(`/medicos/datos/${idPersonal}`)
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('edit-id').value               = data.id_personal;
+          document.getElementById('edit-nombre').value           = data.nombre;
+          document.getElementById('edit-apellido_paterno').value = data.apellido_paterno;
+          document.getElementById('edit-apellido_materno').value = data.apellido_materno || '';
+          document.getElementById('edit-cedula').value           = data.cedula_profesional || '';
+          document.getElementById('edit-telefono').value         = data.telefono || '';
+          document.getElementById('edit-correo').value           = data.correo_institucional;
+          document.getElementById('edit-cargo').value            = data.id_cargo_fk;
+          document.getElementById('edit-turno').value            = data.id_turno_fk || '';
+          document.querySelectorAll('.esp-check').forEach(cb => {
+            cb.checked = data.especialidades.includes(cb.value);
+          });
+          document.getElementById('modal-editar').style.display = 'flex';
+        })
+        .catch(err => alert('Error al cargar datos: ' + err));
+    }
+
+    function cerrarModal() {
+      document.getElementById('modal-editar').style.display = 'none';
+    }
+
+    document.getElementById('modal-editar').addEventListener('click', function(e) {
+      if (e.target === this) cerrarModal();
+    });
+
+    document.getElementById('modal-registrar').addEventListener('click', function(e) {
+      if (e.target === this) this.style.display = 'none';
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – Emergencias Registradas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <style>
+    .nav-user-wrap {
+      position: relative;
+      cursor: pointer;
+    }
+    .nav-user-wrap::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      right: 0;
+      width: 100%;
+      height: 14px;
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px;
+      overflow: hidden;
+      z-index: 200;
+    }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px; font-size: 13px;
+      color: #e63946; font-weight: 600;
+      text-decoration: none; transition: background .15s;
+    }
+    .nav-dropdown a:hover { background: #fdecea; }
+  </style>
+</head>
+<body>
+  <div id="page-dashboard" style="display:flex; flex-direction:column; min-height:100vh;">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab active">Mostrar Emergencias</a>
+        <a href="{{ url_for('registrar_emergencia') }}" class="nav-tab">Registrar Emergencia</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="badge {% if category == 'exito' %}badge-green{% else %}badge-red{% endif %}"
+                 style="margin-bottom:16px; padding:10px 16px; border-radius:10px; font-size:13px;">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div class="section-header" style="justify-content:space-between;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <h2 class="section-title">Emergencias Registradas</h2>
+          <span class="section-sub">Eventos de emergencia pediátrica ordenados por fecha de ingreso</span>
+        </div>
+        <a href="{{ url_for('registrar_emergencia') }}" class="btn-submit" style="text-decoration:none; white-space:nowrap;">+ Registrar Emergencia</a>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID Evento</th>
+                <th>Paciente</th>
+                <th>Tipo de Emergencia</th>
+                <th>Gravedad / Triage</th>
+                <th>Estado</th>
+                <th>Fecha Ingreso</th>
+                <th>Hospital</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if emergencias and emergencias|length > 0 %}
+                {% for e in emergencias %}
+                <tr>
+                  <td class="td-id">{{ e[0] }}</td>
+                  <td class="td-name">{{ e[1] }}</td>
+                  <td>{{ e[2] or '—' }}</td>
+                  <td>
+                    {% set color = (e[4] or '')|lower %}
+                    <span class="priority-dot
+                      {% if 'rojo' in color %}p-rojo
+                      {% elif 'naranja' in color %}p-naranja
+                      {% elif 'verde' in color %}p-verde
+                      {% else %}p-naranja{% endif %}">
+                    </span>
+                    {{ e[3] or '—' }}
+                  </td>
+                  <td>
+                    <span class="badge
+                      {% if 'activ' in (e[5] or '')|lower %}badge-red
+                      {% elif 'cerrad' in (e[5] or '')|lower %}badge-green
+                      {% else %}badge-amber{% endif %}">
+                      {{ e[5] or '—' }}
+                    </span>
+                  </td>
+                  <td class="td-age">{{ e[6].strftime('%d/%m/%Y %H:%M') if e[6] else '—' }}</td>
+                  <td>{{ e[7] or '—' }}</td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="7" style="text-align:center; color:var(--gray-400); padding:40px; font-size:14px;">
+                    No hay emergencias registradas.
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

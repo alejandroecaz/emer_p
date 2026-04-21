@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – Registrar Emergencia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <style>
+    .nav-user-wrap { position: relative; cursor: pointer; }
+    .nav-user-wrap::after { content: ''; position: absolute; top: 100%; right: 0; width: 100%; height: 14px; }
+    .nav-dropdown { display: none; position: absolute; top: calc(100% + 10px); right: 0; background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); min-width: 160px; overflow: hidden; z-index: 200; }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 13px; color: #e63946; font-weight: 600; text-decoration: none; transition: background .15s; }
+    .nav-dropdown a:hover { background: #fdecea; }
+  </style>
+</head>
+<body>
+  <div id="page-dashboard">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('registrar_emergencia') }}" class="nav-tab active">Registrar Emergencia</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <div class="main-content">
+      <div class="section-header">
+        <h2 class="section-title">Registrar Nueva Emergencia</h2>
+        <span class="section-sub">Complete los campos para crear un nuevo evento de emergencia pediátrica</span>
+      </div>
+      <div class="card" style="max-width:760px;">
+        <form method="POST" action="{{ url_for('insertar_emergencia') }}">
+          <div class="form-grid">
+            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px;">Identificación del Evento</div>
+            <div class="f-group">
+              <label>ID Evento *</label>
+              <input type="text" name="id_evento" placeholder="Ej: EVT-0050" required>
+            </div>
+            <div class="f-group">
+              <label>Paciente *</label>
+              <select name="id_paciente" required>
+                <option value="">-- Selecciona paciente --</option>
+                {% for pac in pacientes %}
+                  <option value="{{ pac[0] }}">{{ pac[0] }} - {{ pac[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">Clasificación Clínica</div>
+            <div class="f-group">
+              <label>Tipo de Emergencia</label>
+              <select name="id_tipo_emergencia">
+                <option value="">-- Selecciona tipo --</option>
+                {% for t in tipos %}
+                  <option value="{{ t[0] }}">{{ t[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="f-group">
+              <label>Nivel de Gravedad / Triage *</label>
+              <select name="id_gravedad" required>
+                <option value="">-- Selecciona gravedad --</option>
+                {% for g in gravedades %}
+                  <option value="{{ g[0] }}">{{ g[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">Ubicación</div>
+            <div class="f-group">
+              <label>Hospital *</label>
+              <select name="id_hospital" required>
+                <option value="">-- Selecciona hospital --</option>
+                {% for h in hospitales %}
+                  <option value="{{ h[0] }}">{{ h[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="f-group">
+              <label>Sala / Servicio</label>
+              <select name="id_sala">
+                <option value="">-- Opcional --</option>
+                {% for s in salas %}
+                  <option value="{{ s[0] }}">{{ s[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">Personal Responsable</div>
+            <div class="f-group full">
+              <label>Personal que Registra</label>
+              <select name="id_personal_registro">
+                <option value="">-- Opcional --</option>
+                {% for per in personal %}
+                  <option value="{{ per[0] }}">{{ per[0] }} - {{ per[1] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">Notas</div>
+            <div class="f-group full">
+              <label>Observaciones</label>
+              <textarea name="observaciones" placeholder="Descripción inicial del evento, síntomas observados, etc."></textarea>
+            </div>
+          </div>
+          <div style="display:flex; gap:12px; margin-top:24px;">
+            <button class="btn-submit" type="submit">Registrar Emergencia</button>
+            <a href="{{ url_for('emergencias') }}" class="btn-submit" style="text-decoration:none; background:var(--gray-600);">Cancelar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
