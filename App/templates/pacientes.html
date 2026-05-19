@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – Pacientes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <style>
+    .nav-user-wrap { position: relative; cursor: pointer; }
+    .nav-user-wrap::after { content: ''; position: absolute; top: 100%; right: 0; width: 100%; height: 14px; }
+    .nav-dropdown {
+      display: none; position: absolute; top: calc(100% + 10px); right: 0;
+      background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px; overflow: hidden; z-index: 200;
+    }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a {
+      display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+      font-size: 13px; color: #e63946; font-weight: 600;
+      text-decoration: none; transition: background .15s;
+    }
+    .nav-dropdown a:hover { background: #fdecea; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-box {
+      background: white; border-radius: 10px; padding: 2rem;
+      width: 90%; max-width: 700px; max-height: 90vh;
+      overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .modal-close { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: #666; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-full { grid-column: 1 / -1; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #444; }
+    .form-group input, .form-group select {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px; box-sizing: border-box;
+    }
+    .form-actions { display: flex; gap: 12px; margin-top: 1.5rem; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+  <div style="display:flex; flex-direction:column; min-height:100vh;">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab active">Pacientes</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
+      </div>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="badge {% if category == 'exito' %}badge-green{% else %}badge-red{% endif %}"
+                 style="margin-bottom:16px; padding:10px 16px; border-radius:10px; font-size:13px;">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div class="section-header" style="justify-content:space-between;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <h2 class="section-title">Pacientes</h2>
+          <span class="section-sub">Listado de pacientes registrados en el sistema</span>
+        </div>
+        <button onclick="document.getElementById('modal-registrar').style.display='flex'"
+                class="btn-submit" style="border:none; cursor:pointer;">+ Nuevo Paciente</button>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid" style="margin-bottom:24px;">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon">👶</div>
+          <div class="kpi-value">{{ pacientes | length }}</div>
+          <div class="kpi-label">Total Pacientes</div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-value">{{ pacientes | selectattr(10|string, 'equalto', 'Activo') | list | length }}</div>
+          <div class="kpi-label">Activos</div>
+        </div>
+        <div class="kpi-card kpi-teal">
+          <div class="kpi-icon">🩸</div>
+          <div class="kpi-value">{{ pacientes | map(attribute=7) | select | list | length }}</div>
+          <div class="kpi-label">Con Tipo de Sangre</div>
+        </div>
+      </div>
+
+      <!-- Tabla -->
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Apellidos</th>
+                <th>Fecha Nacimiento</th>
+                <th>Sexo</th>
+                <th>CURP</th>
+                <th>Tipo Sangre</th>
+                <th>Peso (kg)</th>
+                <th>Talla (cm)</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in pacientes %}
+              <tr>
+                <td class="td-id">{{ p[0] }}</td>
+                <td class="td-name">{{ p[1] }}</td>
+                <td>{{ p[2] }} {{ p[3] }}</td>
+                <td>{{ p[4].strftime('%d/%m/%Y') if p[4] else '—' }}</td>
+                <td>{{ p[5] or '—' }}</td>
+                <td style="font-size:12px; color:#64748b;">{{ p[6] or '—' }}</td>
+                <td>
+                  {% if p[7] %}
+                    <span class="badge badge-red">{{ p[7] }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td>{{ p[8] or '—' }}</td>
+                <td>{{ p[9] or '—' }}</td>
+                <td>
+                  <span class="badge {% if p[10] == 'Activo' %}badge-green{% else %}badge-red{% endif %}">
+                    {{ p[10] }}
+                  </span>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="10" style="text-align:center; color:var(--gray-400); padding:40px; font-size:14px;">
+                  No hay pacientes registrados.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL REGISTRAR PACIENTE -->
+  <div id="modal-registrar" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Nuevo Paciente</h3>
+        <button onclick="document.getElementById('modal-registrar').style.display='none'" class="modal-close">✕</button>
+      </div>
+      <form method="POST" action="{{ url_for('insertar_paciente') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>ID Paciente *</label>
+            <input type="text" name="id_paciente" placeholder="Ej: PAC-009" required>
+          </div>
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" name="nombre" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Paterno *</label>
+            <input type="text" name="apellido_paterno" required>
+          </div>
+          <div class="form-group">
+            <label>Apellido Materno</label>
+            <input type="text" name="apellido_materno">
+          </div>
+          <div class="form-group">
+            <label>Fecha de Nacimiento *</label>
+            <input type="date" name="fecha_nacimiento" required>
+          </div>
+          <div class="form-group">
+            <label>Sexo *</label>
+            <select name="sexo" required>
+              <option value="">-- Selecciona --</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>CURP</label>
+            <input type="text" name="curp" maxlength="18" placeholder="18 caracteres">
+          </div>
+          <div class="form-group">
+            <label>Tipo de Sangre</label>
+            <select name="id_tipo_sangre">
+              <option value="">-- Ninguno --</option>
+              {% for ts in tipos_sangre %}
+                <option value="{{ ts[0] }}">{{ ts[1] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Peso (kg)</label>
+            <input type="number" name="peso_kg" step="0.01" min="0" max="200">
+          </div>
+          <div class="form-group">
+            <label>Talla (cm)</label>
+            <input type="number" name="talla_cm" step="0.1" min="0" max="250">
+          </div>
+          <div class="form-group form-full">
+            <label>Municipio</label>
+            <select name="id_municipio">
+              <option value="">-- Ninguno --</option>
+              {% for m in municipios %}
+                <option value="{{ m[0] }}">{{ m[1] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="document.getElementById('modal-registrar').style.display='none'"
+                  class="btn-submit" style="background:#aaa;">Cancelar</button>
+          <button type="submit" class="btn-submit">Registrar Paciente</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('modal-registrar').addEventListener('click', function(e) {
+      if (e.target === this) this.style.display = 'none';
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – Análisis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <!-- Highcharts -->
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <style>
+    .nav-user-wrap { position: relative; cursor: pointer; }
+    .nav-user-wrap::after { content: ''; position: absolute; top: 100%; right: 0; width: 100%; height: 14px; }
+    .nav-dropdown {
+      display: none; position: absolute; top: calc(100% + 10px); right: 0;
+      background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px; overflow: hidden; z-index: 200;
+    }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a {
+      display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+      font-size: 13px; color: #e63946; font-weight: 600;
+      text-decoration: none; transition: background .15s;
+    }
+    .nav-dropdown a:hover { background: #fdecea; }
+
+    .graficas-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;
+    }
+    .graficas-grid-3 {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 24px;
+    }
+    .grafica-card {
+      background: white; border-radius: 12px; padding: 24px;
+      border: 1.5px solid var(--gray-200); box-shadow: var(--shadow-sm);
+    }
+    .grafica-titulo { font-size: 14px; font-weight: 700; color: var(--blue-deep); margin-bottom: 16px; }
+    .chart-wrap { position: relative; height: 260px; }
+
+    .seccion-titulo {
+      font-size: 13px; font-weight: 700; color: var(--gray-400);
+      text-transform: uppercase; letter-spacing: .06em;
+      margin: 28px 0 14px;
+    }
+  </style>
+</head>
+<body>
+  <div style="display:flex; flex-direction:column; min-height:100vh;">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        <a href="{{ url_for('reportes') }}" class="nav-tab active">Análisis</a>
+      </div>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <div class="section-header" style="justify-content:space-between; margin-bottom:24px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <h2 class="section-title">Análisis</h2>
+          <span class="section-sub">Análisis histórico de emergencias pediátricas</span>
+        </div>
+      </div>
+
+      <!-- FILA 1: Emergencias por tipo + por gravedad -->
+      <p class="seccion-titulo">Distribución de emergencias</p>
+      <div class="graficas-grid">
+        <div class="grafica-card">
+          <div class="grafica-titulo">📊 Emergencias por tipo</div>
+          <div id="chartTipo" class="chart-wrap"></div>
+        </div>
+        <div class="grafica-card">
+          <div class="grafica-titulo">📈 Emergencias por gravedad</div>
+          <div id="chartGravedad" class="chart-wrap"></div>
+        </div>
+      </div>
+
+      <!-- FILA 2: Pacientes por rango de edad + Médicos con más emergencias -->
+      <p class="seccion-titulo">Pacientes y personal</p>
+      <div class="graficas-grid">
+        <div class="grafica-card">
+          <div class="grafica-titulo">👶 Pacientes por rango de edad</div>
+          <div id="chartEdad" class="chart-wrap"></div>
+        </div>
+        <div class="grafica-card">
+          <div class="grafica-titulo">👨‍⚕️ Médicos con más emergencias atendidas</div>
+          <div id="chartMedicos" class="chart-wrap"></div>
+        </div>
+      </div>
+
+      <!-- FILA 3: Urgencias por turno -->
+      <p class="seccion-titulo">Distribución por turno</p>
+      <div class="graficas-grid" style="grid-template-columns: 1fr;">
+        <div class="grafica-card">
+          <div class="grafica-titulo">🕐 Urgencias registradas por turno</div>
+          <div id="chartTurno" class="chart-wrap"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ── Paleta de colores SIRAPE ──
+    const COLORES = ['#0a2540','#1a6b8a','#00b4d8','#2d9d6a','#f4a261','#e63946','#e9c46a','#457b9d'];
+    const GRAVEDAD_COLORES = { 'Amarillo - Moderado': '#e9c46a', 'Naranja - Urgente': '#f4a261', 'Rojo - Crítico': '#e63946' };
+
+    // ── Opciones base compartidas ──
+    Highcharts.setOptions({
+      chart: { style: { fontFamily: "'DM Sans', sans-serif" }, backgroundColor: 'transparent' },
+      credits: { enabled: false },
+      title: { text: '' }
+    });
+
+    // ─────────────────────────────────────────────
+    // GRÁFICA 1 — Emergencias por tipo (donut)
+    // ─────────────────────────────────────────────
+    fetch('/api/kpi/emergencias_por_tipo')
+      .then(r => r.json())
+      .then(data => {
+        Highcharts.chart('chartTipo', {
+          chart: { type: 'pie' },
+          tooltip: { pointFormat: '<b>{point.y}</b> casos ({point.percentage:.1f}%)' },
+          plotOptions: {
+            pie: {
+              innerSize: '55%',
+              dataLabels: { enabled: false },
+              showInLegend: true
+            }
+          },
+          legend: { layout: 'vertical', align: 'right', verticalAlign: 'middle', itemStyle: { fontSize: '11px' } },
+          series: [{
+            name: 'Emergencias',
+            colorByPoint: true,
+            data: data.map((d, i) => ({ name: d.tipo, y: d.total, color: COLORES[i % COLORES.length] }))
+          }]
+        });
+      });
+
+    // ─────────────────────────────────────────────
+    // GRÁFICA 2 — Emergencias por gravedad (barras)
+    // ─────────────────────────────────────────────
+    fetch('/api/kpi/emergencias_por_gravedad')
+      .then(r => r.json())
+      .then(data => {
+        Highcharts.chart('chartGravedad', {
+          chart: { type: 'column' },
+          xAxis: { categories: data.map(d => d.gravedad), crosshair: true,
+                   labels: { style: { fontSize: '11px' } } },
+          yAxis: { min: 0, title: { text: 'Casos' }, allowDecimals: false },
+          tooltip: { headerFormat: '<b>{point.key}</b><br>', pointFormat: '{point.y} casos' },
+          plotOptions: {
+            column: {
+              borderRadius: 6,
+              colorByPoint: true,
+              colors: data.map(d => GRAVEDAD_COLORES[d.gravedad] || '#1a6b8a')
+            }
+          },
+          legend: { enabled: false },
+          series: [{ name: 'Casos', data: data.map(d => d.total) }]
+        });
+      });
+
+    // ─────────────────────────────────────────────
+    // GRÁFICA 3 — Pacientes por rango de edad (pie)
+    // ─────────────────────────────────────────────
+    fetch('/api/kpi/pacientes_por_edad')
+      .then(r => r.json())
+      .then(data => {
+        Highcharts.chart('chartEdad', {
+          chart: { type: 'pie' },
+          tooltip: { pointFormat: '<b>{point.y}</b> pacientes ({point.percentage:.1f}%)' },
+          plotOptions: {
+            pie: {
+              innerSize: '0%',
+              dataLabels: { enabled: true, format: '<b>{point.name}</b><br>{point.y}', style: { fontSize: '11px' } }
+            }
+          },
+          series: [{
+            name: 'Pacientes',
+            colorByPoint: true,
+            data: data.map((d, i) => ({ name: d.rango, y: d.total, color: COLORES[i % COLORES.length] }))
+          }]
+        });
+      });
+
+    // ─────────────────────────────────────────────
+    // GRÁFICA 4 — Médicos con más emergencias (barras horizontales)
+    // ─────────────────────────────────────────────
+    fetch('/api/kpi/medicos_top')
+      .then(r => r.json())
+      .then(data => {
+        Highcharts.chart('chartMedicos', {
+          chart: { type: 'bar' },
+          xAxis: { categories: data.map(d => d.medico), labels: { style: { fontSize: '11px' } } },
+          yAxis: { min: 0, title: { text: 'Emergencias' }, allowDecimals: false },
+          tooltip: { pointFormat: '<b>{point.y}</b> emergencias' },
+          plotOptions: { bar: { borderRadius: 4, colorByPoint: false, color: '#1a6b8a' } },
+          legend: { enabled: false },
+          series: [{ name: 'Emergencias', data: data.map(d => d.total) }]
+        });
+      });
+
+    // ─────────────────────────────────────────────
+    // GRÁFICA 5 — Urgencias por turno (columnas)
+    // ─────────────────────────────────────────────
+    fetch('/api/kpi/urgencias_por_turno')
+      .then(r => r.json())
+      .then(data => {
+        Highcharts.chart('chartTurno', {
+          chart: { type: 'column' },
+          xAxis: { categories: data.map(d => d.turno), labels: { style: { fontSize: '12px' } } },
+          yAxis: { min: 0, title: { text: 'Registros' }, allowDecimals: false },
+          tooltip: { pointFormat: '<b>{point.y}</b> registros en turno {point.key}' },
+          plotOptions: {
+            column: {
+              borderRadius: 6,
+              colorByPoint: true,
+              colors: ['#0a2540', '#1a6b8a', '#00b4d8']
+            }
+          },
+          legend: { enabled: false },
+          series: [{ name: 'Urgencias', data: data.map(d => d.total) }]
+        });
+      });
+  </script>
+
+</body>
+</html>

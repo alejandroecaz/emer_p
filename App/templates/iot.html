@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SIRAPE – IoT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
+  <style>
+    .nav-user-wrap { position: relative; cursor: pointer; }
+    .nav-user-wrap::after { content: ''; position: absolute; top: 100%; right: 0; width: 100%; height: 14px; }
+    .nav-dropdown {
+      display: none; position: absolute; top: calc(100% + 10px); right: 0;
+      background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px; overflow: hidden; z-index: 200;
+    }
+    .nav-user-wrap:hover .nav-dropdown { display: block; }
+    .nav-dropdown a {
+      display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+      font-size: 13px; color: #e63946; font-weight: 600; text-decoration: none; transition: background .15s;
+    }
+    .nav-dropdown a:hover { background: #fdecea; }
+
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .badge-activo   { background: #d1fae5; color: #065f46; }
+    .badge-inactivo { background: #fee2e2; color: #991b1b; }
+    .badge-alerta   { background: #fef3c7; color: #92400e; }
+    .badge-ok       { background: #e0f2fe; color: #075985; }
+
+    .iot-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .iot-table th {
+      text-align: left; padding: 10px 14px; background: #f8fafc;
+      color: #64748b; font-weight: 600; font-size: 12px;
+      text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e2e8f0;
+    }
+    .iot-table td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    .iot-table tr:last-child td { border-bottom: none; }
+    .iot-table tr:hover td { background: #f8fafc; }
+    .fila-pendiente td { background: #fffbeb; }
+    .fila-pendiente:hover td { background: #fef9c3 !important; }
+
+    .section-badge {
+      background: #e0f2fe; color: #0369a1;
+      border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div style="display:flex; flex-direction:column; min-height:100vh;">
+    <nav class="navbar">
+      <div class="nav-left">
+        <div class="nav-logo-icon">🏥</div>
+        <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
+      </div>
+      <div class="nav-tabs">
+        <div class="nav-tabs">
+        <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab active">IoT</a>
+        <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
+      </div>
+      </div>
+      <div class="nav-right">
+        <div class="nav-user-wrap">
+          <div class="nav-user">
+            <div class="nav-avatar">A</div>
+            <span>Admin</span>
+          </div>
+          <div class="nav-dropdown">
+            <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <div class="section-header">
+        <h2 class="section-title">Monitoreo IoT</h2>
+        <span class="section-sub">Dispositivos, lecturas biométricas y alertas del sistema</span>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon">📡</div>
+          <div class="kpi-value">{{ total_dispositivos }}</div>
+          <div class="kpi-label">Dispositivos Registrados</div>
+          <span class="kpi-trend trend-neu">Total</span>
+        </div>
+        <div class="kpi-card kpi-teal">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-value">{{ dispositivos_activos }}</div>
+          <div class="kpi-label">Dispositivos Activos</div>
+          <span class="kpi-trend trend-up">En línea</span>
+        </div>
+        <div class="kpi-card kpi-red">
+          <div class="kpi-icon">🚨</div>
+          <div class="kpi-value">{{ alertas_pendientes }}</div>
+          <div class="kpi-label">Alertas Pendientes</div>
+          <span class="kpi-trend trend-down">Sin atender</span>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-icon">📊</div>
+          <div class="kpi-value">{{ total_lecturas }}</div>
+          <div class="kpi-label">Lecturas Cargadas</div>
+          <span class="kpi-trend trend-neu">Últimas 20</span>
+        </div>
+      </div>
+
+      <!-- Dispositivos -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-title">
+          Dispositivos IoT
+          <span class="section-badge">{{ total_dispositivos }}</span>
+        </div>
+        <div class="card-sub">Listado de todos los dispositivos registrados en el sistema</div>
+        <table class="iot-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Hospital</th>
+              <th>Sala</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in dispositivos %}
+            <tr>
+              <td><code>{{ d[0] }}</code></td>
+              <td>{{ d[1] }}</td>
+              <td>{{ d[2] }}</td>
+              <td>{{ d[3] }}</td>
+              <td>{{ d[4] or '—' }}</td>
+              <td>
+                {% if d[5] == 'Activo' %}
+                  <span class="badge badge-activo">● Activo</span>
+                {% else %}
+                  <span class="badge badge-inactivo">● Inactivo</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:24px;">Sin dispositivos registrados</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Lecturas recientes -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-title">
+          Lecturas Recientes
+          <span class="section-badge">Últimas 20</span>
+        </div>
+        <div class="card-sub">Datos biométricos capturados por los dispositivos</div>
+        <table class="iot-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Dispositivo</th>
+              <th>Evento</th>
+              <th>Tipo de Lectura</th>
+              <th>Valor</th>
+              <th>Timestamp</th>
+              <th>Alerta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in lecturas %}
+            <tr>
+              <td>{{ l[0] }}</td>
+              <td><code>{{ l[1] }}</code></td>
+              <td>{{ l[2] or '—' }}</td>
+              <td>{{ l[3] }}</td>
+              <td><strong>{{ l[4] }}</strong></td>
+              <td style="color:#64748b; font-size:13px;">{{ l[5].strftime('%d/%m/%Y %H:%M') if l[5] else '—' }}</td>
+              <td>
+                {% if l[6] %}
+                  <span class="badge badge-alerta">⚠ Sí</span>
+                {% else %}
+                  <span class="badge badge-ok">No</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:24px;">Sin lecturas registradas</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+<!-- Todas las Alertas -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-title">
+          🔔 Todas las Alertas
+          <span class="section-badge">{{ alertas_pendientes }} pendientes</span>
+        </div>
+        <div class="card-sub">Alertas de emergencias y dispositivos IoT</div>
+        <table class="iot-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tipo</th>
+              <th>Referencia</th>
+              <th>Mensaje</th>
+              <th>Fecha</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in todas_alertas %}
+            <tr class="{{ '' if a[5] else 'fila-pendiente' }}">
+              <td>{{ a[1] }}</td>
+              <td>
+                {% if a[0] == 'emergencia' %}
+                  <span class="badge badge-alerta">🚨 Emergencia</span>
+                  {% if a[6] %}
+                    <span style="font-size:11px; color:#64748b;">{{ a[6] }}</span>
+                  {% endif %}
+                {% else %}
+                  <span class="badge badge-ok">📡 IoT</span>
+                {% endif %}
+              </td>
+              <td><code>{{ a[2] }}</code></td>
+              <td>{{ a[3] or '—' }}</td>
+              <td style="color:#64748b; font-size:13px;">
+                {{ a[4].strftime('%d/%m/%Y %H:%M') if a[4] else '—' }}
+              </td>
+              <td>
+                {% if a[5] %}
+                  <span class="badge badge-ok">✓ Atendida</span>
+                {% else %}
+                  <span class="badge badge-alerta">⚠ Pendiente</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:24px;">Sin alertas registradas</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

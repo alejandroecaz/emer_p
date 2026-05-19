@@ -39,6 +39,40 @@
       text-decoration: none; transition: background .15s;
     }
     .nav-dropdown a:hover { background: #fdecea; }
+
+    
+
+    
+
+    .beacon-banner {
+     display: flex;
+     align-items: center;
+     gap: 12px;
+     background: linear-gradient(135deg, #0d9488 0%, #0369a1 100%);
+     color: white;
+     padding: 12px 20px;
+     border-radius: 10px;
+     margin-bottom: 20px;
+     font-size: 13px;
+    }
+    .beacon-banner .beacon-icon { font-size: 22px; flex-shrink: 0; }
+    .beacon-banner strong { font-size: 14px; display: block; margin-bottom: 2px; }
+    .beacon-banner.manual {
+      background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+    }
+    .preloaded-label { display: flex; align-items: center; gap: 6px; }
+    .badge-beacon {
+      background: #dcfce7;
+      color: #15803d;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+
   </style>
 </head>
 <body>
@@ -50,9 +84,11 @@
       </div>
       <div class="nav-tabs">
         <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
         <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
-        <a href="{{ url_for('registrar_emergencia') }}" class="nav-tab active">Registrar Emergencia</a>
         <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
       </div>
       <div class="nav-right">
         <div class="nav-user-wrap">
@@ -73,9 +109,31 @@
         <h2 class="section-title">Registrar Nueva Emergencia</h2>
         <span class="section-sub">Complete los campos para crear un nuevo evento de emergencia pediátrica</span>
       </div>
+       {% if desde_beacon %}
+      <div class="beacon-banner">
+        <div class="beacon-icon">📡</div>
+        <div>
+          <strong>Acceso por Beacon — Ubicación detectada automáticamente</strong>
+          Hospital y sala precargados desde el beacon <strong>{{ beacon_nombre }}</strong>. Solo completa los datos del paciente.
+        </div>
+      </div>
+      {% else %}
+      <div class="beacon-banner manual">
+        <div class="beacon-icon">✏️</div>
+        <div>
+          <strong>Registro manual</strong>
+          Selecciona el hospital y sala de atención.
+        </div>
+      </div>
+      {% endif %}
+
 
       <div class="card" style="max-width:760px;">
         <form method="POST" action="{{ url_for('insertar_emergencia') }}">
+           {% if desde_beacon %}
+          <input type="hidden" name="desde_beacon" value="{{ beacon_id }}">
+          {% endif %}
+
           <div class="form-grid">
 
             <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px;">
@@ -117,10 +175,25 @@
               </select>
             </div>
 
-            <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">
+             <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">
               Ubicación
-            </div>
+             </div>
+             <div class="f-group">
+
             <div class="f-group">
+              {% if desde_beacon %}
+              <label class="preloaded-label">
+                Hospital * <span class="badge-beacon">📡 beacon</span>
+              </label>
+              <select name="id_hospital" required>
+                {% for h in hospitales %}
+                  <option value="{{ h[0] }}" {% if h[0] == beacon_hospital %}selected{% endif %}>
+                    {{ h[1] }}
+                  </option>
+                {% endfor %}
+              </select>
+              {% else %}
+              <!-- Acceso manual: exactamente igual que el original -->
               <label>Hospital *</label>
               <select name="id_hospital" required>
                 <option value="">-- Selecciona hospital --</option>
@@ -128,8 +201,25 @@
                   <option value="{{ h[0] }}">{{ h[1] }}</option>
                 {% endfor %}
               </select>
+              {% endif %}
             </div>
+
+
+
             <div class="f-group">
+              {% if desde_beacon and beacon_sala %}
+              <label class="preloaded-label">
+                Sala / Servicio <span class="badge-beacon">📡 beacon</span>
+              </label>
+              <select name="id_sala">
+                {% for s in salas %}
+                  <option value="{{ s[0] }}" {% if s[0] == beacon_sala %}selected{% endif %}>
+                    {{ s[1] }}
+                  </option>
+                {% endfor %}
+              </select>
+              {% else %}
+              <!-- Acceso manual: exactamente igual que el original -->
               <label>Sala / Servicio</label>
               <select name="id_sala">
                 <option value="">-- Opcional --</option>
@@ -137,7 +227,10 @@
                   <option value="{{ s[0] }}">{{ s[1] }}</option>
                 {% endfor %}
               </select>
+              {% endif %}
             </div>
+
+
 
             <div class="full" style="font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--teal); border-bottom:1.5px solid var(--gray-200); padding-bottom:8px; margin-bottom:4px; margin-top:8px;">
               Personal Responsable
@@ -157,11 +250,10 @@
             </div>
             <div class="f-group full">
               <label>Observaciones</label>
-              <textarea name="observaciones" placeholder="Descripción inicial del evento, síntomas observados, etc."></textarea>
+              <textarea name="observaciones" placeholder="Descripción inicial del evento, síntomas observados, etc.">{% if desde_beacon %}[Acceso por beacon {{ beacon_nombre }} — {{ beacon_sala_nombre }}] {% endif %}</textarea>
             </div>
-
-          </div>
-
+ 
+            </div> 
           <div style="display:flex; gap:12px; margin-top:24px;">
             <button class="btn-submit" type="submit">Registrar Emergencia</button>
             <a href="{{ url_for('emergencias') }}" class="btn-submit" style="text-decoration:none; background:var(--gray-600);">Cancelar</a>

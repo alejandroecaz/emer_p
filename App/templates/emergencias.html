@@ -7,38 +7,77 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/estilo.css') }}">
   <style>
-    .nav-user-wrap {
-      position: relative;
-      cursor: pointer;
-    }
-    .nav-user-wrap::after {
-      content: '';
-      position: absolute;
-      top: 100%;
-      right: 0;
-      width: 100%;
-      height: 14px;
-    }
+    .nav-user-wrap { position: relative; cursor: pointer; }
+    .nav-user-wrap::after { content: ''; position: absolute; top: 100%; right: 0; width: 100%; height: 14px; }
     .nav-dropdown {
-      display: none;
-      position: absolute;
-      top: calc(100% + 10px);
-      right: 0;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.15);
-      min-width: 160px;
-      overflow: hidden;
-      z-index: 200;
+      display: none; position: absolute; top: calc(100% + 10px); right: 0;
+      background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+      min-width: 160px; overflow: hidden; z-index: 200;
     }
     .nav-user-wrap:hover .nav-dropdown { display: block; }
     .nav-dropdown a {
-      display: flex; align-items: center; gap: 8px;
-      padding: 12px 16px; font-size: 13px;
-      color: #e63946; font-weight: 600;
+      display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+      font-size: 13px; color: #e63946; font-weight: 600;
       text-decoration: none; transition: background .15s;
     }
     .nav-dropdown a:hover { background: #fdecea; }
+
+    .filtros-bar {
+      display: flex; flex-wrap: wrap; gap: 12px;
+      background: white; border: 1.5px solid var(--gray-200);
+      border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .filtro-group { display: flex; flex-direction: column; gap: 4px; }
+    .filtro-group label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--gray-400); }
+    .filtro-group input, .filtro-group select {
+      border: 1.5px solid var(--gray-200); border-radius: 8px;
+      padding: 7px 10px; font-size: 13px; color: var(--gray-700);
+      background: var(--gray-50); min-width: 140px;
+    }
+    .filtro-group input:focus, .filtro-group select:focus { outline: none; border-color: var(--teal); }
+
+    .btn-confirmar {
+      background: #0d9488; color: white; border: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .btn-confirmar:hover { background: #0f766e; }
+    .btn-confirmar.confirmado { background: #16a34a; cursor: default; }
+
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45); z-index: 999;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: white; border-radius: 14px; padding: 28px;
+      width: 100%; max-width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal-title { font-size: 16px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+    .modal-sub   { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
+    .modal-label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block; }
+    .modal-select {
+      width: 100%; padding: 10px 12px; border: 1.5px solid #e5e7eb;
+      border-radius: 8px; font-size: 14px; margin-bottom: 20px; color: #1a1a1a;
+    }
+    .modal-info {
+      background: #f0fdf4; border: 1px solid #bbf7d0;
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 12px; color: #166534; margin-bottom: 20px;
+    }
+    .modal-btns { display: flex; gap: 10px; }
+    .modal-btn-ok {
+      flex: 1; background: #0d9488; color: white; border: none;
+      padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .modal-btn-ok:hover { background: #0f766e; }
+    .modal-btn-cancel {
+      flex: 1; background: #f1f5f9; color: #374151; border: none;
+      padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .modal-btn-cancel:hover { background: #e2e8f0; }
   </style>
 </head>
 <body>
@@ -49,10 +88,14 @@
         <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
       </div>
       <div class="nav-tabs">
+        <div class="nav-tabs">
         <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
         <a href="{{ url_for('emergencias') }}" class="nav-tab active">Mostrar Emergencias</a>
-        <a href="{{ url_for('registrar_emergencia') }}" class="nav-tab">Registrar Emergencia</a>
         <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
+      </div>
       </div>
       <div class="nav-right">
         <div class="nav-user-wrap">
@@ -88,9 +131,52 @@
         <a href="{{ url_for('registrar_emergencia') }}" class="btn-submit" style="text-decoration:none; white-space:nowrap;">+ Registrar Emergencia</a>
       </div>
 
+      <!-- Barra de filtros -->
+      <div class="filtros-bar">
+        <div class="filtro-group">
+          <label>Desde</label>
+          <input type="date" id="filtro-desde">
+        </div>
+        <div class="filtro-group">
+          <label>Hasta</label>
+          <input type="date" id="filtro-hasta">
+        </div>
+        <div class="filtro-group">
+          <label>Tipo</label>
+          <select id="filtro-tipo">
+            <option value="">Todos</option>
+            {% for t in tipos %}
+              <option value="{{ t[1] }}">{{ t[1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filtro-group">
+          <label>Gravedad</label>
+          <select id="filtro-gravedad">
+            <option value="">Todas</option>
+            {% for g in gravedades %}
+              <option value="{{ g[1] }}">{{ g[1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filtro-group">
+          <label>Hospital</label>
+          <select id="filtro-hospital">
+            <option value="">Todos</option>
+            {% for h in hospitales %}
+              <option value="{{ h[1] }}">{{ h[1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filtro-group" style="justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <button onclick="limpiarFiltros()" style="padding:7px 14px; border-radius:8px; border:1.5px solid var(--gray-200); background:white; cursor:pointer; font-size:13px; color:var(--gray-600);">Limpiar</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="table-wrap">
-          <table>
+          <table id="tablaEmergencias">
             <thead>
               <tr>
                 <th>ID Evento</th>
@@ -100,12 +186,16 @@
                 <th>Estado</th>
                 <th>Fecha Ingreso</th>
                 <th>Hospital</th>
+                <th>Ubicación Médico</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="tbodyEmergencias">
               {% if emergencias and emergencias|length > 0 %}
                 {% for e in emergencias %}
-                <tr>
+                <tr data-tipo="{{ e[2] or '' }}"
+                    data-gravedad="{{ e[3] or '' }}"
+                    data-hospital="{{ e[7] or '' }}"
+                    data-fecha="{{ e[6].strftime('%Y-%m-%d') if e[6] else '' }}">
                   <td class="td-id">{{ e[0] }}</td>
                   <td class="td-name">{{ e[1] }}</td>
                   <td>{{ e[2] or '—' }}</td>
@@ -129,11 +219,22 @@
                   </td>
                   <td class="td-age">{{ e[6].strftime('%d/%m/%Y %H:%M') if e[6] else '—' }}</td>
                   <td>{{ e[7] or '—' }}</td>
+                  <td>
+                    {% if 'activ' in (e[5] or '')|lower %}
+                    <button class="btn-confirmar"
+                            onclick="abrirModal('{{ e[0] }}', 'SAL-001', '{{ e[7] or '' }}')"
+                            id="btn-{{ e[0] }}">
+                      📡 Confirmar atención
+                    </button>
+                    {% else %}
+                    <span style="color:#9ca3af; font-size:12px;">—</span>
+                    {% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
               {% else %}
                 <tr>
-                  <td colspan="7" style="text-align:center; color:var(--gray-400); padding:40px; font-size:14px;">
+                  <td colspan="8" style="text-align:center; color:var(--gray-400); padding:40px; font-size:14px;">
                     No hay emergencias registradas.
                   </td>
                 </tr>
@@ -145,5 +246,124 @@
 
     </div>
   </div>
+
+  <!-- Modal beacon -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-box">
+      <div class="modal-title">📡 Confirmar atención con Beacon</div>
+      <div class="modal-sub" id="modalSub">Evento: —</div>
+      <div class="modal-info">
+        🏥 Beacon <strong>DIS-003</strong> detectado en
+        <strong>Urgencias Pediátricas</strong> — <span id="modalHospital"></span>
+      </div>
+      <label class="modal-label">¿Quién está atendiendo este evento?</label>
+      <select class="modal-select" id="selectPersonal">
+        <option value="">-- Selecciona el médico --</option>
+      </select>
+      <div class="modal-btns">
+        <button class="modal-btn-cancel" onclick="cerrarModal()">Cancelar</button>
+        <button class="modal-btn-ok" onclick="confirmarAtencion()">Confirmar ubicación</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let eventoActual = null;
+    let salaActual   = null;
+
+    function aplicarFiltros() {
+      const desde    = document.getElementById('filtro-desde').value;
+      const hasta    = document.getElementById('filtro-hasta').value;
+      const tipo     = document.getElementById('filtro-tipo').value.toLowerCase();
+      const gravedad = document.getElementById('filtro-gravedad').value.toLowerCase();
+      const hospital = document.getElementById('filtro-hospital').value.toLowerCase();
+
+      document.querySelectorAll('#tbodyEmergencias tr[data-fecha]').forEach(row => {
+        const rowFecha    = row.dataset.fecha;
+        const rowTipo     = row.dataset.tipo.toLowerCase();
+        const rowGravedad = row.dataset.gravedad.toLowerCase();
+        const rowHospital = row.dataset.hospital.toLowerCase();
+
+        let visible = true;
+        if (desde    && rowFecha    < desde)              visible = false;
+        if (hasta    && rowFecha    > hasta)              visible = false;
+        if (tipo     && !rowTipo.includes(tipo))          visible = false;
+        if (gravedad && !rowGravedad.includes(gravedad))  visible = false;
+        if (hospital && !rowHospital.includes(hospital))  visible = false;
+
+        row.style.display = visible ? '' : 'none';
+      });
+    }
+
+    function limpiarFiltros() {
+      ['filtro-desde','filtro-hasta','filtro-tipo','filtro-gravedad','filtro-hospital']
+        .forEach(id => { document.getElementById(id).value = ''; });
+      aplicarFiltros();
+    }
+
+    ['filtro-desde','filtro-hasta','filtro-tipo','filtro-gravedad','filtro-hospital']
+      .forEach(id => document.getElementById(id).addEventListener('change', aplicarFiltros));
+
+    function abrirModal(idEvento, idSala, hospital) {
+      eventoActual = idEvento;
+      salaActual   = idSala;
+      document.getElementById('modalSub').textContent = 'Evento: ' + idEvento;
+      document.getElementById('modalHospital').textContent = hospital || 'Hospital';
+      document.getElementById('modalOverlay').classList.add('show');
+
+      fetch('/medico/activos')
+        .then(r => r.json())
+        .then(data => {
+          const sel = document.getElementById('selectPersonal');
+          sel.innerHTML = '<option value="">-- Selecciona el médico --</option>';
+          data.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value       = m[0];
+            opt.textContent = m[0] + ' — ' + m[1];
+            sel.appendChild(opt);
+          });
+        })
+        .catch(() => console.error('No se pudieron cargar los médicos.'));
+    }
+
+    function cerrarModal() {
+      document.getElementById('modalOverlay').classList.remove('show');
+      eventoActual = null;
+      salaActual   = null;
+    }
+
+    function confirmarAtencion() {
+      const idPersonal = document.getElementById('selectPersonal').value;
+      if (!idPersonal) { alert('Por favor selecciona un médico.'); return; }
+
+      fetch('/medico/ubicacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'id_personal=' + idPersonal +
+              '&id_evento='  + eventoActual +
+              '&id_sala='    + salaActual
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          const btn = document.getElementById('btn-' + eventoActual);
+          if (btn) { btn.textContent = '✅ Atendiendo'; btn.classList.add('confirmado'); btn.disabled = true; }
+          fetch('/emergencias/atender', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'id_evento=' + eventoActual
+          });
+          cerrarModal();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      })
+      .catch(() => alert('Error de conexión al confirmar la atención.'));
+    }
+
+    document.getElementById('modalOverlay').addEventListener('click', function(e) {
+      if (e.target === this) cerrarModal();
+    });
+  </script>
 </body>
 </html>
