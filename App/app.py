@@ -682,17 +682,10 @@ def reportes():
 def kpi_emergencias_tipo():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT cte.nombre AS tipo, COUNT(*) AS total
-                FROM evento_emergencia ee
-                JOIN Catalogo_Tipo_Emergencia cte
-                  ON ee.id_tipo_emergencia_FK = cte.id_tipo_emergencia
-                GROUP BY cte.nombre
-                ORDER BY total DESC;
-            """)
+            cur.execute("SELECT tipo_emergencia AS tipo, total, porcentaje FROM v_kpi_emergencias_por_tipo;")
             rows = cur.fetchall()
 
-    data = [{"tipo": r[0], "total": int(r[1])} for r in rows]
+    data = [{"tipo": r[0], "total": int(r[1]), "porcentaje": float(r[2])} for r in rows]
 
     db = get_mongo()
     db.kpi_emergencias_tipo.insert_one({"fecha": datetime.utcnow(), "datos": data})
@@ -705,17 +698,10 @@ def kpi_emergencias_tipo():
 def kpi_emergencias_gravedad():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT cng.nivel AS gravedad, COUNT(*) AS total
-                FROM evento_emergencia ee
-                JOIN catalogo_nivel_gravedad cng
-                  ON ee.id_gravedad_fk = cng.id_gravedad
-                GROUP BY cng.nivel
-                ORDER BY total DESC;
-            """)
+            cur.execute("SELECT gravedad, total, porcentaje FROM v_kpi_emergencias_por_gravedad;")
             rows = cur.fetchall()
 
-    data = [{"gravedad": r[0], "total": int(r[1])} for r in rows]
+    data = [{"gravedad": r[0], "total": int(r[1]), "porcentaje": float(r[2])} for r in rows]
 
     db = get_mongo()
     db.kpi_emergencias_gravedad.insert_one({"fecha": datetime.utcnow(), "datos": data})
@@ -728,21 +714,7 @@ def kpi_emergencias_gravedad():
 def kpi_pacientes_edad():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                  CASE
-                    WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 0  AND 2  THEN '0–2 años'
-                    WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 3  AND 6  THEN '3–6 años'
-                    WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 7  AND 12 THEN '7–12 años'
-                    WHEN EXTRACT(YEAR FROM AGE(fecha_nacimiento)) BETWEEN 13 AND 17 THEN '13–17 años'
-                    ELSE 'Otro'
-                  END AS rango,
-                  COUNT(*) AS total
-                FROM Paciente
-                WHERE fecha_nacimiento IS NOT NULL
-                GROUP BY rango
-                ORDER BY MIN(EXTRACT(YEAR FROM AGE(fecha_nacimiento)));
-            """)
+            cur.execute("SELECT rango_edad AS rango, total_pacientes AS total FROM v_kpi_pacientes_por_edad;")
             rows = cur.fetchall()
 
     data = [{"rango": r[0], "total": int(r[1])} for r in rows]
@@ -758,17 +730,7 @@ def kpi_pacientes_edad():
 def kpi_medicos_top():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                  pm.nombre || ' ' || pm.apellido_paterno AS medico,
-                  COUNT(ee.id_evento) AS total
-                FROM Personal_Medico pm
-                JOIN Evento_Emergencia ee
-                  ON ee.id_personal_registro_FK = pm.id_personal
-                GROUP BY pm.id_personal, medico
-                ORDER BY total DESC
-                LIMIT 8;
-            """)
+            cur.execute("SELECT nombre_completo AS medico, total_eventos_atendidos AS total FROM v_kpi_medicos_top LIMIT 8;")
             rows = cur.fetchall()
 
     data = [{"medico": r[0], "total": int(r[1])} for r in rows]
@@ -784,18 +746,7 @@ def kpi_medicos_top():
 def kpi_urgencias_turno():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                  ct.nombre AS turno,
-                  COUNT(ee.id_evento) AS total
-                FROM evento_emergencia ee
-                JOIN Personal_Medico pm
-                  ON ee.id_personal_registro_FK = pm.id_personal
-                JOIN Catalogo_Turno ct
-                  ON pm.id_turno_FK = ct.id_turno
-                GROUP BY ct.nombre
-                ORDER BY total DESC;
-            """)
+            cur.execute("SELECT turno, total_emergencias AS total FROM v_kpi_urgencias_por_turno;")
             rows = cur.fetchall()
 
     data = [{"turno": r[0], "total": int(r[1])} for r in rows]
@@ -824,6 +775,26 @@ def atender_emergencia():
                 conn.rollback()
                 return jsonify({'ok': False, 'error': str(e)}), 500
 
+
+@app.route('/emergencias/resolver', methods=['POST'])
+@login_required
+def resolver_emergencia():
+    id_evento = request.form.get('id_evento')
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("""
+                    UPDATE evento_emergencia 
+                    SET id_estado_evento_fk = 'EST-003',
+                        fecha_hora_egreso = NOW()
+                    WHERE id_evento = %s;
+                """, (id_evento,))
+                cur.execute("UPDATE notificacion SET leida = true WHERE id_evento_fk = %s;", (id_evento,))
+                conn.commit()
+                return jsonify({'ok': True}), 200
+            except Exception as e:
+                conn.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
 
 # ==========================================
 # MAIN

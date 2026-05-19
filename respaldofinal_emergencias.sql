@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DOlAokXY00QW88f9DK6VutqQ5d4NiNQGdHVgXddnZ4VCJ6zUWt5TaEQQfnc2mZF
+\restrict lkv3ElEg6soRu7I5IiaGgvn8CdszEJBWdGiL5ay1WcP925gC71b3qIQNxOD3t8g
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -45,6 +45,193 @@ $$;
 
 
 ALTER FUNCTION public.fn_alerta_emergencia_critica() OWNER TO emer_user;
+
+--
+-- Name: fn_alerta_lectura_iot(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_alerta_lectura_iot() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF (NEW.tipo_lectura = 'frecuencia_cardiaca' AND NEW.valor_numerico < 50) OR
+       (NEW.tipo_lectura = 'saturacion_o2'       AND NEW.valor_numerico < 90) OR
+       (NEW.tipo_lectura = 'temperatura'          AND NEW.valor_numerico > 39.5) THEN
+        INSERT INTO alerta_iot (id_lectura_fk, mensaje, atendida)
+        VALUES (NEW.id_lectura, 
+                'Lectura crítica detectada: ' || NEW.tipo_lectura || ' = ' || NEW.valor_numerico,
+                false);
+        UPDATE lectura_iot SET alerta_generada = true WHERE id_lectura = NEW.id_lectura;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_alerta_lectura_iot() OWNER TO emer_user;
+
+--
+-- Name: fn_auditoria_evento_insert(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_auditoria_evento_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO auditoria (tabla_afectada, operacion, fecha_hora)
+    VALUES ('evento_emergencia', 'INSERT', NOW());
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_auditoria_evento_insert() OWNER TO emer_user;
+
+--
+-- Name: fn_auditoria_medico_insert(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_auditoria_medico_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO auditoria (tabla_afectada, operacion, fecha_hora)
+    VALUES ('personal_medico', 'INSERT', NOW());
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_auditoria_medico_insert() OWNER TO emer_user;
+
+--
+-- Name: fn_auditoria_medico_update(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_auditoria_medico_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO auditoria (tabla_afectada, operacion, fecha_hora)
+    VALUES ('personal_medico', 'UPDATE', NOW());
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_auditoria_medico_update() OWNER TO emer_user;
+
+--
+-- Name: fn_auditoria_paciente_insert(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_auditoria_paciente_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO auditoria (tabla_afectada, operacion, fecha_hora)
+    VALUES ('paciente', 'INSERT', NOW());
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_auditoria_paciente_insert() OWNER TO emer_user;
+
+--
+-- Name: fn_desactivar_ubicacion_anterior(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_desactivar_ubicacion_anterior() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE ubicacion_personal
+    SET activo = false, fecha_fin = NOW()
+    WHERE id_personal_fk = NEW.id_personal_fk
+      AND activo = true
+      AND id_ubicacion != NEW.id_ubicacion;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_desactivar_ubicacion_anterior() OWNER TO emer_user;
+
+--
+-- Name: fn_notificar_cierre_evento(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_notificar_cierre_evento() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.fecha_hora_egreso IS NOT NULL AND OLD.fecha_hora_egreso IS NULL THEN
+        INSERT INTO notificacion (id_evento_fk, id_usuario_destino_fk, mensaje, leida)
+        SELECT NEW.id_evento, id_personal_registro_fk,
+               'Evento ' || NEW.id_evento || ' ha sido cerrado.', false
+        FROM evento_emergencia
+        WHERE id_evento = NEW.id_evento
+          AND id_personal_registro_fk IN (
+              SELECT id_usuario FROM usuario_sistema
+          );
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_notificar_cierre_evento() OWNER TO emer_user;
+
+--
+-- Name: fn_reducir_stock_medicamento(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_reducir_stock_medicamento() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE medicamento_inventario
+    SET stock_actual = stock_actual - NEW.dosis_aplicada
+    WHERE id_medicamento = NEW.id_medicamento_fk;
+
+    IF (SELECT stock_actual FROM medicamento_inventario
+        WHERE id_medicamento = NEW.id_medicamento_fk) < 0 THEN
+        RAISE EXCEPTION 'Stock insuficiente para el medicamento: %', NEW.id_medicamento_fk;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_reducir_stock_medicamento() OWNER TO emer_user;
+
+--
+-- Name: fn_validar_signos_vitales(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_validar_signos_vitales() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.frecuencia_cardiaca IS NOT NULL AND
+       (NEW.frecuencia_cardiaca < 30 OR NEW.frecuencia_cardiaca > 220) THEN
+        RAISE EXCEPTION 'Frecuencia cardíaca fuera de rango válido: %', NEW.frecuencia_cardiaca;
+    END IF;
+    IF NEW.saturacion_o2 IS NOT NULL AND
+       (NEW.saturacion_o2 < 0 OR NEW.saturacion_o2 > 100) THEN
+        RAISE EXCEPTION 'Saturación O2 fuera de rango válido: %', NEW.saturacion_o2;
+    END IF;
+    IF NEW.temperatura_c IS NOT NULL AND
+       (NEW.temperatura_c < 30 OR NEW.temperatura_c > 45) THEN
+        RAISE EXCEPTION 'Temperatura fuera de rango válido: %', NEW.temperatura_c;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_validar_signos_vitales() OWNER TO emer_user;
 
 --
 -- Name: sp_alertas_iot(); Type: FUNCTION; Schema: public; Owner: emer_user
@@ -457,7 +644,7 @@ BEGIN
     ) VALUES (
         p_id_personal, p_nombre, p_apellido_paterno, p_apellido_materno,
         p_cedula, p_rfc, p_curp, p_id_cargo, p_id_turno,
-        'HSP-01', p_telefono, p_correo
+        'HSP-001', p_telefono, p_correo
     );
     p_ok := 1;
     p_msg := 'Médico registrado correctamente.';
@@ -2008,6 +2195,193 @@ CREATE TABLE public.usuario_sistema (
 ALTER TABLE public.usuario_sistema OWNER TO emer_user;
 
 --
+-- Name: v_kpi_alertas_iot; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_alertas_iot AS
+ SELECT di.nombre AS dispositivo,
+    di.tipo_dispositivo,
+    count(ai.id_alerta) AS total_alertas,
+    count(ai.id_alerta) FILTER (WHERE (ai.atendida = false)) AS alertas_pendientes,
+    count(ai.id_alerta) FILTER (WHERE (ai.atendida = true)) AS alertas_atendidas
+   FROM ((public.dispositivo_iot di
+     LEFT JOIN public.lectura_iot li ON (((di.id_dispositivo)::text = (li.id_dispositivo_fk)::text)))
+     LEFT JOIN public.alerta_iot ai ON ((li.id_lectura = ai.id_lectura_fk)))
+  GROUP BY di.nombre, di.tipo_dispositivo
+  ORDER BY (count(ai.id_alerta)) DESC;
+
+
+ALTER VIEW public.v_kpi_alertas_iot OWNER TO emer_user;
+
+--
+-- Name: v_kpi_emergencias_por_gravedad; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_emergencias_por_gravedad AS
+ SELECT cng.nivel AS gravedad,
+    count(*) AS total,
+    round((((count(*))::numeric * 100.0) / sum(count(*)) OVER ()), 2) AS porcentaje
+   FROM (public.evento_emergencia ee
+     JOIN public.catalogo_nivel_gravedad cng ON (((ee.id_gravedad_fk)::text = (cng.id_gravedad)::text)))
+  GROUP BY cng.nivel
+  ORDER BY (count(*)) DESC;
+
+
+ALTER VIEW public.v_kpi_emergencias_por_gravedad OWNER TO emer_user;
+
+--
+-- Name: v_kpi_emergencias_por_tipo; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_emergencias_por_tipo AS
+ SELECT cte.nombre AS tipo_emergencia,
+    count(*) AS total,
+    round((((count(*))::numeric * 100.0) / sum(count(*)) OVER ()), 2) AS porcentaje
+   FROM (public.evento_emergencia ee
+     JOIN public.catalogo_tipo_emergencia cte ON (((ee.id_tipo_emergencia_fk)::text = (cte.id_tipo_emergencia)::text)))
+  GROUP BY cte.nombre
+  ORDER BY (count(*)) DESC;
+
+
+ALTER VIEW public.v_kpi_emergencias_por_tipo OWNER TO emer_user;
+
+--
+-- Name: v_kpi_medicos_top; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_medicos_top AS
+ SELECT pm.id_personal,
+    (((pm.nombre)::text || ' '::text) || (pm.apellido_paterno)::text) AS nombre_completo,
+    cc.nombre AS cargo,
+    count(pe.id_evento_fk) AS total_eventos_atendidos
+   FROM ((public.personal_medico pm
+     LEFT JOIN public.participacion_evento pe ON (((pm.id_personal)::text = (pe.id_personal_fk)::text)))
+     LEFT JOIN public.catalogo_cargo cc ON (((pm.id_cargo_fk)::text = (cc.id_cargo)::text)))
+  GROUP BY pm.id_personal, pm.nombre, pm.apellido_paterno, cc.nombre
+  ORDER BY (count(pe.id_evento_fk)) DESC;
+
+
+ALTER VIEW public.v_kpi_medicos_top OWNER TO emer_user;
+
+--
+-- Name: v_kpi_pacientes_por_edad; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_pacientes_por_edad AS
+ SELECT
+        CASE
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (2)::double precision) THEN '0-1 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (6)::double precision) THEN '2-5 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (13)::double precision) THEN '6-12 años'::text
+            ELSE '13-17 años'::text
+        END AS rango_edad,
+    count(*) AS total_pacientes
+   FROM public.paciente
+  GROUP BY
+        CASE
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (2)::double precision) THEN '0-1 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (6)::double precision) THEN '2-5 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (13)::double precision) THEN '6-12 años'::text
+            ELSE '13-17 años'::text
+        END
+  ORDER BY
+        CASE
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (2)::double precision) THEN '0-1 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (6)::double precision) THEN '2-5 años'::text
+            WHEN (date_part('year'::text, age((fecha_nacimiento)::timestamp with time zone)) < (13)::double precision) THEN '6-12 años'::text
+            ELSE '13-17 años'::text
+        END;
+
+
+ALTER VIEW public.v_kpi_pacientes_por_edad OWNER TO emer_user;
+
+--
+-- Name: v_kpi_resumen_hospital; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_resumen_hospital AS
+ SELECT h.nombre AS hospital,
+    count(DISTINCT p.id_paciente) AS total_pacientes,
+    count(DISTINCT pm.id_personal) AS total_personal_activo,
+    count(DISTINCT ee.id_evento) AS total_eventos,
+    count(DISTINCT ee.id_evento) FILTER (WHERE (ee.fecha_hora_egreso IS NULL)) AS eventos_activos
+   FROM (((public.hospital h
+     LEFT JOIN public.evento_emergencia ee ON (((h.id_hospital)::text = (ee.id_hospital_fk)::text)))
+     LEFT JOIN public.paciente p ON (((ee.id_paciente_fk)::text = (p.id_paciente)::text)))
+     LEFT JOIN public.personal_medico pm ON ((((h.id_hospital)::text = (pm.id_hospital_fk)::text) AND ((pm.estado)::text = 'Activo'::text))))
+  GROUP BY h.nombre;
+
+
+ALTER VIEW public.v_kpi_resumen_hospital OWNER TO emer_user;
+
+--
+-- Name: v_kpi_tasa_eventos_criticos; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_tasa_eventos_criticos AS
+ SELECT count(*) FILTER (WHERE (((cng.nivel)::text ~~* '%Crítico%'::text) OR ((cng.nivel)::text ~~* '%Critico%'::text))) AS eventos_criticos,
+    count(*) AS total_eventos,
+    round((((count(*) FILTER (WHERE (((cng.nivel)::text ~~* '%Crítico%'::text) OR ((cng.nivel)::text ~~* '%Critico%'::text))))::numeric * 100.0) / (NULLIF(count(*), 0))::numeric), 2) AS tasa_criticos_pct
+   FROM (public.evento_emergencia ee
+     JOIN public.catalogo_nivel_gravedad cng ON (((ee.id_gravedad_fk)::text = (cng.id_gravedad)::text)));
+
+
+ALTER VIEW public.v_kpi_tasa_eventos_criticos OWNER TO emer_user;
+
+--
+-- Name: v_kpi_tiempo_promedio_atencion; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_tiempo_promedio_atencion AS
+ SELECT ee.id_evento,
+    (((p.nombre)::text || ' '::text) || (p.apellido_paterno)::text) AS paciente,
+    cte.nombre AS tipo_emergencia,
+    ee.fecha_hora_ingreso,
+    ee.fecha_hora_egreso,
+    (EXTRACT(epoch FROM (ee.fecha_hora_egreso - ee.fecha_hora_ingreso)) / (60)::numeric) AS minutos_atencion
+   FROM ((public.evento_emergencia ee
+     JOIN public.paciente p ON (((ee.id_paciente_fk)::text = (p.id_paciente)::text)))
+     JOIN public.catalogo_tipo_emergencia cte ON (((ee.id_tipo_emergencia_fk)::text = (cte.id_tipo_emergencia)::text)))
+  WHERE (ee.fecha_hora_egreso IS NOT NULL);
+
+
+ALTER VIEW public.v_kpi_tiempo_promedio_atencion OWNER TO emer_user;
+
+--
+-- Name: v_kpi_urgencias_por_turno; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_urgencias_por_turno AS
+ SELECT ct.nombre AS turno,
+    count(ee.id_evento) AS total_emergencias
+   FROM (((public.evento_emergencia ee
+     JOIN public.participacion_evento pe ON (((ee.id_evento)::text = (pe.id_evento_fk)::text)))
+     JOIN public.personal_medico pm ON (((pe.id_personal_fk)::text = (pm.id_personal)::text)))
+     JOIN public.catalogo_turno ct ON (((pm.id_turno_fk)::text = (ct.id_turno)::text)))
+  GROUP BY ct.nombre
+  ORDER BY (count(ee.id_evento)) DESC;
+
+
+ALTER VIEW public.v_kpi_urgencias_por_turno OWNER TO emer_user;
+
+--
+-- Name: v_kpi_uso_medicamentos; Type: VIEW; Schema: public; Owner: emer_user
+--
+
+CREATE VIEW public.v_kpi_uso_medicamentos AS
+ SELECT mi.nombre_generico AS medicamento,
+    count(ume.id_uso) AS veces_usado,
+    sum(ume.dosis_aplicada) AS dosis_total_aplicada,
+    mi.stock_actual AS stock_restante
+   FROM (public.uso_medicamento_evento ume
+     JOIN public.medicamento_inventario mi ON (((ume.id_medicamento_fk)::text = (mi.id_medicamento)::text)))
+  GROUP BY mi.nombre_generico, mi.stock_actual
+  ORDER BY (count(ume.id_uso)) DESC;
+
+
+ALTER VIEW public.v_kpi_uso_medicamentos OWNER TO emer_user;
+
+--
 -- Name: v_ubicacion_activa_personal; Type: VIEW; Schema: public; Owner: emer_user
 --
 
@@ -2184,6 +2558,8 @@ COPY public.antecedente_medico (id_antecedente, id_paciente_fk, tipo_antecedente
 --
 
 COPY public.auditoria (id_auditoria, id_usuario_fk, tabla_afectada, operacion, fecha_hora, ip_origen) FROM stdin;
+1	\N	evento_emergencia	INSERT	2026-05-19 05:55:49.511206+00	\N
+2	\N	evento_emergencia	INSERT	2026-05-19 06:02:18.796938+00	\N
 \.
 
 
@@ -2452,6 +2828,11 @@ prueba	PAC-003	TEM-002	GRV-001	EST-002	HSP-002	SAL-003	\N	2026-05-18 23:33:05.70
 prueba3	PAC-007	TEM-005	GRV-003	EST-001	HSP-003	SAL-002	\N	2026-05-19 00:50:47.573026+00	\N	\N	PER-002
 prueba4	PAC-004	TEM-004	GRV-003	EST-001	HSP-003	SAL-004	\N	2026-05-19 00:59:08.953003+00	\N	\N	PER-002
 prueba1	PAC-005	TEM-002	GRV-001	EST-002	HSP-003	SAL-002	\N	2026-05-19 00:37:06.72243+00	\N	\N	PER-003
+ADT-500	PAC-005	TEM-003	GRV-001	EST-002	HSP-001	SAL-003	\N	2026-05-19 05:16:17.205812+00	\N	\N	PER-001
+AVT-200	PAC-666	TEM-003	GRV-001	EST-002	HSP-002	SAL-001	\N	2026-05-19 05:38:29.767301+00	\N	\N	1w313123
+AVT-100	PAC-666	TEM-003	GRV-001	EST-002	HSP-003	SAL-002	\N	2026-05-19 05:42:13.863634+00	\N	\N	PER-006
+AVT-111	PAC-777	TEM-002	GRV-001	EST-002	HSP-002	SAL-002	\N	2026-05-19 05:55:49.511206+00	\N	\N	1w313123
+AVT-112	PAC-777	TEM-004	GRV-001	EST-003	HSP-001	SAL-001	\N	2026-05-19 06:02:18.796938+00	2026-05-19 07:15:34.646261+00	\N	1w313123
 \.
 
 
@@ -2492,6 +2873,11 @@ COPY public.lectura_iot (id_lectura, id_dispositivo_fk, id_evento_fk, "timestamp
 8	DIS-003	prueba	2026-05-18 23:49:36.829741+00	Presencia-Medico	1.00	f
 9	DIS-003	prueba	2026-05-19 00:02:17.449303+00	Presencia-Medico	1.00	f
 10	DIS-003	prueba1	2026-05-19 00:59:37.314193+00	Presencia-Medico	1.00	f
+11	DIS-003	ADT-500	2026-05-19 05:17:00.528037+00	Presencia-Medico	1.00	f
+12	DIS-003	AVT-200	2026-05-19 05:38:54.470691+00	Presencia-Medico	1.00	f
+13	DIS-003	AVT-100	2026-05-19 05:42:48.575582+00	Presencia-Medico	1.00	f
+14	DIS-003	AVT-111	2026-05-19 05:56:17.570394+00	Presencia-Medico	1.00	f
+15	DIS-003	AVT-112	2026-05-19 06:02:44.708162+00	Presencia-Medico	1.00	f
 \.
 
 
@@ -2517,6 +2903,10 @@ PER-001	ESP-002
 PER-002	ESP-002
 PER-006	ESP-001
 PER-006	ESP-003
+1w313123	ESP-004
+MED-010	ESP-003
+MED-010	ESP-004
+MED-011	ESP-002
 \.
 
 
@@ -2550,6 +2940,11 @@ COPY public.notificacion (id_notificacion, id_evento_fk, id_usuario_destino_fk, 
 2	EVT-008	USR-001	🚨 Emergencia CRÍTICA registrada: EVT-008. Requiere atención inmediata.	2026-05-19 00:06:26.257836+00	f
 4	prueba4	USR-001	📋 Emergencia MODERADA registrada: prueba4.	2026-05-19 00:59:08.953003+00	f
 3	prueba1	USR-001	🚨 Emergencia CRÍTICA registrada: prueba1. Requiere atención inmediata.	2026-05-19 00:37:06.72243+00	t
+5	ADT-500	USR-001	🚨 Emergencia CRÍTICA registrada: ADT-500. Requiere atención inmediata.	2026-05-19 05:16:17.205812+00	t
+6	AVT-200	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-200. Requiere atención inmediata.	2026-05-19 05:38:29.767301+00	t
+7	AVT-100	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-100. Requiere atención inmediata.	2026-05-19 05:42:13.863634+00	t
+8	AVT-111	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-111. Requiere atención inmediata.	2026-05-19 05:55:49.511206+00	t
+9	AVT-112	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-112. Requiere atención inmediata.	2026-05-19 06:02:18.796938+00	t
 \.
 
 
@@ -2566,6 +2961,9 @@ PAC-005	Mateo	Herrera	López	2019-09-30	M	HELM190930HNLRPTZ3	SAN-001	20.00	110.0
 PAC-006	Camila	Vega	Torres	2021-04-18	F	VETC210418MNLLRML5	SAN-007	14.50	95.0	MUN-002	Activo
 PAC-008	Sofía	Jiménez	Ruiz	2023-02-10	F	JIRS230210MNLMZFA4	SAN-004	10.00	78.0	MUN-003	Activo
 PAC-007	Lucas	Ramírez	Díaz	2016-08-25	M	RADL160825HNLMZCL1	SAN-003	32.00	130.0	MUN-001	Cerrado
+PAC-100	Alfredo	Mateos	255	2026-05-06	F	123123123123123	SAN-003	200.00	250.0	MUN-003	Activo
+PAC-666	Luis	Garcia	Toledo	2026-02-10	M	1023921048fjfbdvn	SAN-004	20.00	20.0	MUN-004	Activo
+PAC-777	Jorge	lopez	mateos	2026-02-11	M	19'238102948ashdui	SAN-004	10.00	20.0	MUN-001	Activo
 \.
 
 
@@ -2617,9 +3015,12 @@ PER-001	Carlos	Ramírez	Lozano	CED-001	RFC-PER001	CURP-PER001	CAR-001	TUR-001	HS
 PER-002	Laura	González	Vega	CED-002	RFC-PER002	CURP-PER002	CAR-002	TUR-002	HSP-001	8112001002	l.gonzalez@cruzroja.mx	Activo
 PER-003	Miguel	Torres	Salas	CED-003	RFC-PER003	CURP-PER003	CAR-003	TUR-001	HSP-001	8112001003	m.torres@cruzroja.mx	Activo
 PER-004	Ana	Martínez	Ruiz	CED-004	RFC-PER004	CURP-PER004	CAR-003	TUR-003	HSP-001	8112001004	a.martinez@cruzroja.mx	Activo
-PER-005	Roberto	Herrera	Cruz	CED-005	RFC-PER005	CURP-PER005	CAR-004	TUR-002	HSP-001	8112001005	r.herrera@cruzroja.mx	Activo
 PER-006	Sofía	López	Morales	CED-006	RFC-PER006	CURP-PER006	CAR-005	TUR-001	HSP-001	8112001006	s.lopez@cruzroja.mx	Activo
 PER-007	Jorge	Díaz	Peña	CED-007	RFC-PER007	CURP-PER007	CAR-001	TUR-003	HSP-001	8112001007	j.diaz@cruzroja.mx	Inactivo
+1w313123	alejandrin	Cazares	escobedo	1313123	1231231231	123132231	CAR-002	TUR-003	HSP-001	12312313	adasdsdad@gmail.com	Activo
+PER-005	Roberto	Herrera	Cruz	CED-005	RFC-PER005	CURP-PER005	CAR-004	TUR-002	HSP-001	8112001005	r.herrera@cruzroja.mx	Inactivo
+MED-010	Roberuto	Guerra	Martinez	CED-008	FZYU600614IH8	DBCX530301MTCHZF46	CAR-005	TUR-001	HSP-001	528112345678	roberuto.guerra@gmail.com	Activo
+MED-011	Jorgue	Torres	Tamez	CED-009	FZYU600614IH9	DBCX530301MTCHZF47	CAR-004	TUR-003	HSP-001	528112345679	diego.Torres@gmail.com	Activo
 \.
 
 
@@ -2757,13 +3158,18 @@ TUT-005	Eduardo	Herrera	PAR-001	8111001005	e.herrera@email.com	DOC-001	INE-005	M
 
 COPY public.ubicacion_personal (id_ubicacion, id_personal_fk, id_evento_fk, id_sala_fk, id_beacon_fk, fecha_inicio, fecha_fin, activo) FROM stdin;
 1	PER-001	EVT-001	SAL-001	DIS-003	2026-05-18 00:42:26.364744+00	2026-05-18 00:54:03.074736+00	f
-2	PER-001	0021	SAL-001	DIS-003	2026-05-18 00:54:03.074736+00	\N	t
 3	PER-002	EVT-008	SAL-001	DIS-003	2026-05-18 00:54:45.125972+00	\N	t
 4	PER-004	EVT-0009	SAL-001	DIS-003	2026-05-18 22:53:52.98961+00	2026-05-18 23:49:36.829741+00	f
-6	PER-004	prueba	SAL-001	DIS-003	2026-05-18 23:49:36.829741+00	\N	t
 5	PER-003	prueba	SAL-001	DIS-003	2026-05-18 23:46:29.897082+00	2026-05-19 00:02:17.449303+00	f
-7	PER-003	prueba	SAL-001	DIS-003	2026-05-19 00:02:17.449303+00	\N	t
 8	PER-005	prueba1	SAL-001	DIS-003	2026-05-19 00:59:37.314193+00	\N	t
+7	PER-003	prueba	SAL-001	DIS-003	2026-05-19 00:02:17.449303+00	2026-05-19 05:17:00.528037+00	f
+9	PER-003	ADT-500	SAL-001	DIS-003	2026-05-19 05:17:00.528037+00	2026-05-19 05:38:54.470691+00	f
+10	PER-003	AVT-200	SAL-001	DIS-003	2026-05-19 05:38:54.470691+00	\N	t
+11	MED-010	AVT-100	SAL-001	DIS-003	2026-05-19 05:42:48.575582+00	\N	t
+2	PER-001	0021	SAL-001	DIS-003	2026-05-18 00:54:03.074736+00	2026-05-19 05:56:17.570394+00	f
+12	PER-001	AVT-111	SAL-001	DIS-003	2026-05-19 05:56:17.570394+00	\N	t
+6	PER-004	prueba	SAL-001	DIS-003	2026-05-18 23:49:36.829741+00	2026-05-19 06:02:44.708162+00	f
+13	PER-004	AVT-112	SAL-001	DIS-003	2026-05-19 06:02:44.708162+00	\N	t
 \.
 
 
@@ -2822,14 +3228,14 @@ SELECT pg_catalog.setval('public.antecedente_medico_id_antecedente_seq', 7, true
 -- Name: auditoria_id_auditoria_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.auditoria_id_auditoria_seq', 1, false);
+SELECT pg_catalog.setval('public.auditoria_id_auditoria_seq', 2, true);
 
 
 --
 -- Name: lectura_iot_id_lectura_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.lectura_iot_id_lectura_seq', 10, true);
+SELECT pg_catalog.setval('public.lectura_iot_id_lectura_seq', 15, true);
 
 
 --
@@ -2843,7 +3249,7 @@ SELECT pg_catalog.setval('public.metrica_evento_id_metrica_seq', 1, false);
 -- Name: notificacion_id_notificacion_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.notificacion_id_notificacion_seq', 4, true);
+SELECT pg_catalog.setval('public.notificacion_id_notificacion_seq', 10, true);
 
 
 --
@@ -2899,7 +3305,7 @@ SELECT pg_catalog.setval('public.traslado_id_traslado_seq', 1, false);
 -- Name: ubicacion_personal_id_ubicacion_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.ubicacion_personal_id_ubicacion_seq', 8, true);
+SELECT pg_catalog.setval('public.ubicacion_personal_id_ubicacion_seq', 13, true);
 
 
 --
@@ -3426,6 +3832,69 @@ ALTER TABLE ONLY public.usuario_sistema
 --
 
 CREATE TRIGGER trg_alerta_emergencia_critica AFTER INSERT ON public.evento_emergencia FOR EACH ROW EXECUTE FUNCTION public.fn_alerta_emergencia_critica();
+
+
+--
+-- Name: lectura_iot trg_alerta_lectura_iot; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_alerta_lectura_iot AFTER INSERT ON public.lectura_iot FOR EACH ROW EXECUTE FUNCTION public.fn_alerta_lectura_iot();
+
+
+--
+-- Name: evento_emergencia trg_auditoria_evento_insert; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_auditoria_evento_insert AFTER INSERT ON public.evento_emergencia FOR EACH ROW EXECUTE FUNCTION public.fn_auditoria_evento_insert();
+
+
+--
+-- Name: personal_medico trg_auditoria_medico_insert; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_auditoria_medico_insert AFTER INSERT ON public.personal_medico FOR EACH ROW EXECUTE FUNCTION public.fn_auditoria_medico_insert();
+
+
+--
+-- Name: personal_medico trg_auditoria_medico_update; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_auditoria_medico_update AFTER UPDATE ON public.personal_medico FOR EACH ROW EXECUTE FUNCTION public.fn_auditoria_medico_update();
+
+
+--
+-- Name: paciente trg_auditoria_paciente_insert; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_auditoria_paciente_insert AFTER INSERT ON public.paciente FOR EACH ROW EXECUTE FUNCTION public.fn_auditoria_paciente_insert();
+
+
+--
+-- Name: ubicacion_personal trg_desactivar_ubicacion_anterior; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_desactivar_ubicacion_anterior AFTER INSERT ON public.ubicacion_personal FOR EACH ROW EXECUTE FUNCTION public.fn_desactivar_ubicacion_anterior();
+
+
+--
+-- Name: evento_emergencia trg_notificar_cierre_evento; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_notificar_cierre_evento AFTER UPDATE ON public.evento_emergencia FOR EACH ROW EXECUTE FUNCTION public.fn_notificar_cierre_evento();
+
+
+--
+-- Name: uso_medicamento_evento trg_reducir_stock_medicamento; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_reducir_stock_medicamento AFTER INSERT ON public.uso_medicamento_evento FOR EACH ROW EXECUTE FUNCTION public.fn_reducir_stock_medicamento();
+
+
+--
+-- Name: signos_vitales trg_validar_signos_vitales; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_validar_signos_vitales BEFORE INSERT ON public.signos_vitales FOR EACH ROW EXECUTE FUNCTION public.fn_validar_signos_vitales();
 
 
 --
@@ -3960,5 +4429,5 @@ ALTER TABLE ONLY public.usuario_sistema
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DOlAokXY00QW88f9DK6VutqQ5d4NiNQGdHVgXddnZ4VCJ6zUWt5TaEQQfnc2mZF
+\unrestrict lkv3ElEg6soRu7I5IiaGgvn8CdszEJBWdGiL5ay1WcP925gC71b3qIQNxOD3t8g
 

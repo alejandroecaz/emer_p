@@ -32,6 +32,8 @@ Paso a Paso para Levantar el Proyecto en Local
 
 5. Configura MongoDB:
     Crear una base llamada sirape_analytics.
+    Restaurar el respaldo .gz en el proyecto.
+        mongostore --db sirape_analytics respaldofinal_sirape_analytics.gz
     
 6. Ejecuta el servidor Flask
     python App/app.py

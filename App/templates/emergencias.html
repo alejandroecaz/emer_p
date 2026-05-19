@@ -44,6 +44,14 @@
     }
     .btn-confirmar:hover { background: #0f766e; }
     .btn-confirmar.confirmado { background: #16a34a; cursor: default; }
+    .btn-resolver {
+      background: #16a34a; color: white; border: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+      display: block; margin-top: 6px;
+    }
+    .btn-resolver:hover { background: #15803d; }
+    .btn-resolver:disabled { background: #9ca3af; cursor: default; }
 
     .modal-overlay {
       display: none; position: fixed; inset: 0;
@@ -226,6 +234,12 @@
                             id="btn-{{ e[0] }}">
                       📡 Confirmar atención
                     </button>
+                    {% elif 'observaci' in (e[5] or '')|lower %}
+                    <button class="btn-resolver"
+                            onclick="resolverEmergencia('{{ e[0] }}')"
+                            id="btn-resolver-{{ e[0] }}">
+                      ✅ Resolver
+                    </button>
                     {% else %}
                     <span style="color:#9ca3af; font-size:12px;">—</span>
                     {% endif %}
@@ -364,6 +378,30 @@
     document.getElementById('modalOverlay').addEventListener('click', function(e) {
       if (e.target === this) cerrarModal();
     });
+
+    function resolverEmergencia(idEvento) {
+      if (!confirm('¿Confirmas que esta emergencia ya fue resuelta?')) return;
+      fetch('/emergencias/resolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'id_evento=' + idEvento
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          const btnResolver = document.getElementById('btn-resolver-' + idEvento);
+          if (btnResolver) { btnResolver.textContent = '✓ Resuelta'; btnResolver.disabled = true; btnResolver.style.background = '#9ca3af'; }
+          const row = btnResolver ? btnResolver.closest('tr') : null;
+          if (row) {
+            const badge = row.querySelector('.badge');
+            if (badge) { badge.className = 'badge badge-green'; badge.textContent = 'Cerrado'; }
+          }
+        } else {
+          alert('Error: ' + data.error);
+        }
+      })
+      .catch(() => alert('Error de conexión.'));
+    }
   </script>
 </body>
 </html>
