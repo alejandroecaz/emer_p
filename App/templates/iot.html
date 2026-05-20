@@ -53,20 +53,25 @@
         <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
       </div>
       <div class="nav-tabs">
-        <div class="nav-tabs">
+        {% if session.get('rol') == 'Administrador' %}
         <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
         <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
-        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Emergencias</a>
         <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
-        <a href="{{ url_for('iot') }}" class="nav-tab active">IoT</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab  active">IoT</a>
         <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
-      </div>
+        {% else %}
+        <a href="{{ url_for('dashboard') }}" class="nav-tab">Mi Panel</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Emergencias</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab  active">IoT</a>
+        {% endif %}
       </div>
       <div class="nav-right">
         <div class="nav-user-wrap">
           <div class="nav-user">
-            <div class="nav-avatar">A</div>
-            <span>Admin</span>
+            <div class="nav-avatar">{{ session.get('usuario', 'U')[0]|upper }}</div>
+            <span>{{ session.get('usuario', 'Admin') }}</span>
           </div>
           <div class="nav-dropdown">
             <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
@@ -193,19 +198,19 @@
         </table>
       </div>
 
-<!-- Todas las Alertas -->
+      <!-- Todas las Alertas -->
       <div class="card" style="margin-bottom:24px;">
         <div class="card-title">
           🔔 Todas las Alertas
           <span class="section-badge">{{ alertas_pendientes }} pendientes</span>
         </div>
-        <div class="card-sub">Alertas de emergencias y dispositivos IoT</div>
+        <div class="card-sub">Notificaciones de emergencias registradas en el sistema</div>
         <table class="iot-table">
           <thead>
             <tr>
               <th>#</th>
               <th>Tipo</th>
-              <th>Referencia</th>
+              <th>Evento</th>
               <th>Mensaje</th>
               <th>Fecha</th>
               <th>Estado</th>
@@ -218,18 +223,14 @@
               <td>
                 {% if a[0] == 'emergencia' %}
                   <span class="badge badge-alerta">🚨 Emergencia</span>
-                  {% if a[6] %}
-                    <span style="font-size:11px; color:#64748b;">{{ a[6] }}</span>
-                  {% endif %}
+                  {% if a[6] %}<span style="font-size:11px; color:#64748b;">{{ a[6] }}</span>{% endif %}
                 {% else %}
                   <span class="badge badge-ok">📡 IoT</span>
                 {% endif %}
               </td>
               <td><code>{{ a[2] }}</code></td>
               <td>{{ a[3] or '—' }}</td>
-              <td style="color:#64748b; font-size:13px;">
-                {{ a[4].strftime('%d/%m/%Y %H:%M') if a[4] else '—' }}
-              </td>
+              <td style="color:#64748b; font-size:13px;">{{ a[4].strftime('%d/%m/%Y %H:%M') if a[4] else '—' }}</td>
               <td>
                 {% if a[5] %}
                   <span class="badge badge-ok">✓ Atendida</span>

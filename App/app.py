@@ -1,6 +1,8 @@
 from pymongo import MongoClient
 from datetime import datetime
+from functools import wraps
 import psycopg
+import psycopg.rows
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 
 app = Flask(__name__)
@@ -14,10 +16,6 @@ DB_CONFIG = {
     "port": 5432
 }
 
-# ── Credenciales hardcodeadas ──
-ADMIN_USER     = 'admin'
-ADMIN_PASSWORD = '1234'
-
 def get_connection():
     return psycopg.connect(**DB_CONFIG)
 
@@ -25,14 +23,43 @@ def get_mongo():
     client = MongoClient("mongodb://emer_user:1234@localhost:27017/sirape_analytics")
     return client["sirape_analytics"]
 
+
+# ==========================================
+# DECORADORES DE ACCESO
+# ==========================================
+
 def login_required(f):
-    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
+
+def admin_required(f):
+    """Solo admins. Si no, redirige al dashboard del usuario."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        if session.get('rol') != 'Administrador':
+            flash('Acceso restringido a administradores.', 'error')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+def medico_enfermero_required(f):
+    """Médicos y enfermeros (no admin)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        if session.get('rol') not in ('Médico', 'Enfermero'):
+            flash('Acceso restringido a personal médico.', 'error')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated
+
 
 # ==========================================
 # LOGIN / LOGOUT
@@ -42,30 +69,181 @@ def login_required(f):
 def login():
     if session.get('logged_in'):
         return redirect(url_for('index'))
+
     error = None
     if request.method == 'POST':
         usuario  = request.form.get('usuario', '').strip()
         password = request.form.get('password', '').strip()
-        if usuario == ADMIN_USER and password == ADMIN_PASSWORD:
-            session['logged_in'] = True
-            session['usuario']   = usuario
-            return redirect(url_for('index'))
+
+        with get_connection() as conn:
+            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                # Buscar por correo O por id_usuario (para que "admin" también funcione)
+                cur.execute("""
+                    SELECT us.id_usuario, us.correo, us.contrasena,
+                           us.id_personal_fk, us.estado_cuenta,
+                           rs.nombre_rol
+                    FROM usuario_sistema us
+                    JOIN usuario_rol ur ON us.id_usuario = ur.id_usuario_fk
+                    JOIN rol_sistema rs ON ur.id_rol_sistema_fk = rs.id_rol_sistema
+                    WHERE (us.correo = %s OR us.id_usuario = %s)
+                      AND us.estado_cuenta = 'Activo'
+                    LIMIT 1;
+                """, (usuario, usuario))
+                user = cur.fetchone()
+
+        if user and user['contrasena'] == password:
+            session['logged_in']   = True
+            session['id_usuario']  = user['id_usuario']
+            session['usuario']     = user['correo']
+            session['rol']         = user['nombre_rol']       # 'Administrador', 'Médico', 'Enfermero'
+            session['id_personal'] = user['id_personal_fk']  # None para admin puro
+
+            # Actualizar ultimo_login
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE usuario_sistema SET ultimo_login = NOW() WHERE id_usuario = %s;",
+                        (user['id_usuario'],)
+                    )
+                    conn.commit()
+
+            # Redirigir según rol
+            if session['rol'] == 'Administrador':
+                return redirect(url_for('index'))
+            else:
+                return redirect(url_for('dashboard'))
         else:
             error = 'Usuario o contraseña incorrectos.'
+
     return render_template('login.html', error=error)
+
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
+
 # ==========================================
-# INDEX / DASHBOARD
+# DASHBOARD MÉDICO / ENFERMERO
+# ==========================================
+
+@app.route('/dashboard')
+@medico_enfermero_required
+def dashboard():
+    """Vista principal para médicos y enfermeros."""
+    id_personal = session.get('id_personal')
+    rol         = session.get('rol')
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            # Emergencias asignadas a este personal (vía participacion_evento)
+            cur.execute("""
+                SELECT ee.id_evento, ee.id_paciente_fk,
+                       p.nombre || ' ' || p.apellido_paterno AS paciente,
+                       te.nombre AS tipo,
+                       cng.nivel AS gravedad,
+                       cee.nombre AS estado,
+                       ee.fecha_hora_ingreso,
+                       ss.nombre_sala AS sala
+                FROM evento_emergencia ee
+                JOIN participacion_evento pe ON ee.id_evento = pe.id_evento_fk
+                JOIN paciente p             ON ee.id_paciente_fk = p.id_paciente
+                JOIN catalogo_tipo_emergencia te ON ee.id_tipo_emergencia_fk = te.id_tipo_emergencia
+                JOIN catalogo_nivel_gravedad cng ON ee.id_gravedad_fk = cng.id_gravedad
+                JOIN catalogo_estado_evento cee  ON ee.id_estado_evento_fk = cee.id_estado_evento
+                LEFT JOIN sala_servicio ss        ON ee.id_sala_fk = ss.id_sala
+                WHERE pe.id_personal_fk = %s
+                  AND ee.id_estado_evento_fk != 'EST-003'
+                ORDER BY ee.fecha_hora_ingreso DESC;
+            """, (id_personal,))
+            mis_emergencias = cur.fetchall()
+
+            # Emergencias disponibles (sin personal asignado o solo con enfermero)
+            cur.execute("""
+                SELECT ee.id_evento,
+                       p.nombre || ' ' || p.apellido_paterno AS paciente,
+                       te.nombre AS tipo,
+                       cng.nivel AS gravedad,
+                       cee.nombre AS estado,
+                       ee.fecha_hora_ingreso
+                FROM evento_emergencia ee
+                JOIN paciente p                   ON ee.id_paciente_fk = p.id_paciente
+                JOIN catalogo_tipo_emergencia te  ON ee.id_tipo_emergencia_fk = te.id_tipo_emergencia
+                JOIN catalogo_nivel_gravedad cng  ON ee.id_gravedad_fk = cng.id_gravedad
+                JOIN catalogo_estado_evento cee   ON ee.id_estado_evento_fk = cee.id_estado_evento
+                WHERE ee.id_estado_evento_fk = 'EST-001'
+                  AND ee.id_evento NOT IN (
+                      SELECT id_evento_fk FROM participacion_evento WHERE id_personal_fk = %s
+                  )
+                ORDER BY ee.fecha_hora_ingreso DESC
+                LIMIT 20;
+            """, (id_personal,))
+            emergencias_disponibles = cur.fetchall()
+
+    return render_template('dashboard.html',
+                           mis_emergencias=mis_emergencias,
+                           emergencias_disponibles=emergencias_disponibles,
+                           rol=rol,
+                           id_personal=id_personal)
+
+
+# ==========================================
+# TOMAR EMERGENCIA (médico / enfermero)
+# ==========================================
+
+@app.route('/emergencias/tomar', methods=['POST'])
+@medico_enfermero_required
+def tomar_emergencia():
+    """El médico o enfermero toma una emergencia disponible."""
+    id_evento   = request.form.get('id_evento')
+    id_personal = session.get('id_personal')
+    rol         = session.get('rol')
+
+    # Mapeo de rol a rol_evento
+    rol_evento_map = {
+        'Médico':    'ROL-001',   # Médico Responsable
+        'Enfermero': 'ROL-003',   # Enfermero Asignado
+    }
+    id_rol_evento = rol_evento_map.get(rol, 'ROL-001')
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                # Insertar participación
+                cur.execute("""
+                    INSERT INTO participacion_evento
+                        (id_evento_fk, id_personal_fk, id_rol_evento_fk, hora_inicio)
+                    VALUES (%s, %s, %s, NOW()::time)
+                    ON CONFLICT DO NOTHING;
+                """, (id_evento, id_personal, id_rol_evento))
+
+                # Marcar notificaciones como leídas
+                cur.execute(
+                    "UPDATE notificacion SET leida = true WHERE id_evento_fk = %s;",
+                    (id_evento,)
+                )
+                conn.commit()
+                flash(f'Emergencia {id_evento} tomada correctamente.', 'exito')
+            except Exception as e:
+                conn.rollback()
+                flash(f'Error al tomar la emergencia: {e}', 'error')
+
+    return redirect(url_for('dashboard'))
+
+
+# ==========================================
+# INDEX / DASHBOARD ADMIN
 # ==========================================
 
 @app.route('/')
 @login_required
 def index():
+    # Si no es admin, redirigir a su dashboard
+    if session.get('rol') != 'Administrador':
+        return redirect(url_for('dashboard'))
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM sp_dashboard_stats();")
@@ -97,6 +275,8 @@ def index():
                            ultimos_pacientes=ultimos_pacientes,
                            ultimas_emergencias=ultimas_emergencias,
                            notificaciones_criticas=notificaciones_criticas)
+
+
 # ==========================================
 # EMERGENCIAS - MOSTRAR
 # ==========================================
@@ -120,17 +300,17 @@ def emergencias():
                            gravedades=gravedades,
                            hospitales=hospitales)
 
+
 # ==========================================
 # EMERGENCIAS - REGISTRAR (GET)
 # ==========================================
 
 @app.route('/registrar_emergencia', methods=['GET'])
-@login_required
+@admin_required
 def registrar_emergencia():
-    # Parámetros opcionales que puede mandar un beacon via URL
-    beacon_id       = request.args.get('beacon')    # Ej: DIS-003
-    beacon_hospital = request.args.get('hospital')  # Ej: HSP-001
-    beacon_sala     = request.args.get('sala')       # Ej: SAL-001
+    beacon_id       = request.args.get('beacon')
+    beacon_hospital = request.args.get('hospital')
+    beacon_sala     = request.args.get('sala')
     desde_beacon    = beacon_id is not None
 
     with get_connection() as conn:
@@ -148,7 +328,6 @@ def registrar_emergencia():
             cur.execute("SELECT * FROM sp_catalogo_personal_activo();")
             personal = cur.fetchall()
 
-            # Si viene del beacon, obtener nombre del dispositivo y sala
             beacon_nombre      = None
             beacon_sala_nombre = None
             if desde_beacon:
@@ -181,12 +360,13 @@ def registrar_emergencia():
                            beacon_nombre=beacon_nombre,
                            beacon_sala_nombre=beacon_sala_nombre)
 
+
 # ==========================================
 # EMERGENCIAS - INSERTAR (POST)
 # ==========================================
 
 @app.route('/emergencias/insertar', methods=['POST'])
-@login_required
+@admin_required
 def insertar_emergencia():
     id_evento     = request.form.get('id_evento', '').strip()
     id_paciente   = request.form.get('id_paciente')
@@ -213,12 +393,42 @@ def insertar_emergencia():
 
     return redirect(url_for('emergencias'))
 
+
+# ==========================================
+# EMERGENCIAS - ASIGNAR PERSONAL (admin)
+# ==========================================
+
+@app.route('/emergencias/asignar', methods=['POST'])
+@admin_required
+def asignar_personal_emergencia():
+    """Admin asigna un médico o enfermero a una emergencia."""
+    id_evento   = request.form.get('id_evento')
+    id_personal = request.form.get('id_personal')
+    id_rol_evento = request.form.get('id_rol_evento', 'ROL-001')
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("""
+                    INSERT INTO participacion_evento
+                        (id_evento_fk, id_personal_fk, id_rol_evento_fk, hora_inicio)
+                    VALUES (%s, %s, %s, NOW()::time)
+                    ON CONFLICT DO NOTHING;
+                """, (id_evento, id_personal, id_rol_evento))
+
+                conn.commit()
+                return jsonify({'ok': True, 'mensaje': 'Personal asignado correctamente'}), 200
+            except Exception as e:
+                conn.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 # ==========================================
 # MÉDICOS
 # ==========================================
 
 @app.route("/medicos")
-@login_required
+@admin_required
 def obtener_medicos():
     conn = None
     cur  = None
@@ -227,7 +437,12 @@ def obtener_medicos():
         cur  = conn.cursor(row_factory=psycopg.rows.dict_row)
         cur.execute("SELECT * FROM sp_obtener_medicos();")
         medicos = cur.fetchall()
-        cur.execute("SELECT * FROM sp_obtener_cargos();")
+        # Solo cargos médico y enfermero (CAR-001, CAR-002, CAR-003)
+        cur.execute("""
+            SELECT id_cargo, nombre FROM catalogo_cargo
+            WHERE id_cargo IN ('CAR-001', 'CAR-002', 'CAR-003')
+            ORDER BY nombre;
+        """)
         cargos = cur.fetchall()
         cur.execute("SELECT * FROM sp_obtener_turnos();")
         turnos = cur.fetchall()
@@ -243,14 +458,19 @@ def obtener_medicos():
 
 
 @app.route("/registrarMedico", methods=["GET"])
-@login_required
+@admin_required
 def registrar_medico():
     conn = None
     cur  = None
     try:
         conn = psycopg.connect(**DB_CONFIG)
         cur  = conn.cursor(row_factory=psycopg.rows.dict_row)
-        cur.execute("SELECT * FROM sp_obtener_cargos();")
+        # Solo cargos médico y enfermero
+        cur.execute("""
+            SELECT id_cargo, nombre FROM catalogo_cargo
+            WHERE id_cargo IN ('CAR-001', 'CAR-002', 'CAR-003')
+            ORDER BY nombre;
+        """)
         cargos = cur.fetchall()
         cur.execute("SELECT * FROM sp_obtener_turnos();")
         turnos = cur.fetchall()
@@ -266,7 +486,7 @@ def registrar_medico():
 
 
 @app.route("/medicos/insertar", methods=["POST"])
-@login_required
+@admin_required
 def insertar_medico():
     conn = None
     cur  = None
@@ -311,7 +531,7 @@ def insertar_medico():
 
 
 @app.route("/medicos/datos/<id_personal>")
-@login_required
+@admin_required
 def datos_medico(id_personal):
     conn = None
     cur  = None
@@ -335,7 +555,7 @@ def datos_medico(id_personal):
 
 
 @app.route("/medicos/editar", methods=["POST"])
-@login_required
+@admin_required
 def editar_medico():
     conn = None
     cur  = None
@@ -379,7 +599,7 @@ def editar_medico():
 
 
 @app.route("/medicos/estado", methods=["POST"])
-@login_required
+@admin_required
 def cambiar_estado_medico():
     conn = None
     cur  = None
@@ -397,6 +617,7 @@ def cambiar_estado_medico():
     finally:
         if cur: cur.close()
     return redirect(url_for("obtener_medicos"))
+
 
 # ==========================================
 # PACIENTES
@@ -416,8 +637,9 @@ def pacientes():
     return render_template('pacientes.html', pacientes=lista_pacientes,
                            tipos_sangre=tipos_sangre, municipios=municipios)
 
+
 @app.route('/pacientes/insertar', methods=['POST'])
-@login_required
+@admin_required
 def insertar_paciente():
     id_paciente      = request.form.get('id_paciente', '').strip()
     nombre           = request.form.get('nombre', '').strip()
@@ -448,6 +670,7 @@ def insertar_paciente():
 
     return redirect(url_for('pacientes'))
 
+
 @app.route('/pacientes/<id_paciente>')
 @login_required
 def detalle_paciente(id_paciente):
@@ -462,8 +685,9 @@ def detalle_paciente(id_paciente):
     return render_template('pacientes.html', paciente=paciente, tutores=tutores,
                            eventos=eventos, detalle=True)
 
+
 @app.route('/pacientes/cerrar', methods=['POST'])
-@login_required
+@admin_required
 def cerrar_caso_paciente():
     id_paciente = request.form.get('id_paciente', '').strip()
     with get_connection() as conn:
@@ -480,47 +704,20 @@ def cerrar_caso_paciente():
                 flash(f'Error al cerrar caso: {e}', 'error')
     return redirect(url_for('pacientes'))
 
-# ==========================================
-# EVENTOS DE EMERGENCIA
-# ==========================================
-
-@app.route('/eventos')
-@login_required
-def eventos():
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM sp_listar_eventos();")
-            lista_eventos = cur.fetchall()
-    return render_template('eventos.html', eventos=lista_eventos)
-
-@app.route('/eventos/<id_evento>')
-@login_required
-def detalle_evento(id_evento):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM sp_detalle_evento(%s);", (id_evento,))
-            evento = cur.fetchone()
-            cur.execute("SELECT * FROM sp_participaciones_evento(%s);", (id_evento,))
-            participaciones = cur.fetchall()
-            cur.execute("SELECT * FROM sp_signos_vitales_evento(%s);", (id_evento,))
-            signos = cur.fetchall()
-            cur.execute("SELECT * FROM sp_tiempos_respuesta_evento(%s);", (id_evento,))
-            tiempos = cur.fetchall()
-    return render_template('eventos.html', evento=evento, participaciones=participaciones,
-                           signos=signos, tiempos=tiempos, detalle=True)
 
 # ==========================================
 # PERSONAL MÉDICO
 # ==========================================
 
 @app.route('/personal')
-@login_required
+@admin_required
 def personal():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM sp_listar_personal();")
             lista_personal = cur.fetchall()
     return render_template('personal.html', personal=lista_personal)
+
 
 @app.route('/personal/<id_personal>')
 @login_required
@@ -536,18 +733,20 @@ def detalle_personal(id_personal):
     return render_template('personal.html', medico=medico, especialidades=especialidades,
                            participaciones=participaciones, detalle=True)
 
+
 # ==========================================
 # USUARIOS DEL SISTEMA
 # ==========================================
 
 @app.route('/usuarios')
-@login_required
+@admin_required
 def usuarios():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM sp_listar_usuarios();")
             lista_usuarios = cur.fetchall()
     return render_template('usuarios.html', usuarios=lista_usuarios)
+
 
 # ==========================================
 # IoT
@@ -568,7 +767,7 @@ def iot():
             alertas_iot = cur.fetchall()
 
             cur.execute("""
-                SELECT 
+                SELECT
                     'emergencia' as tipo,
                     n.id_notificacion::text as id,
                     n.id_evento_fk as referencia,
@@ -609,15 +808,10 @@ def iot():
                            alertas_pendientes=alertas_pendientes,
                            total_lecturas=total_lecturas)
 
+
 @app.route('/medico/ubicacion', methods=['POST'])
 @login_required
 def registrar_ubicacion_medico():
-    """
-    Recibe: id_personal, id_evento, id_sala
-    Llama al stored procedure sp_registrar_ubicacion_medico
-    que guarda la ubicación y genera una lectura en lectura_iot
-    vinculada al beacon DIS-003.
-    """
     id_personal = request.form.get('id_personal')
     id_evento   = request.form.get('id_evento')
     id_sala     = request.form.get('id_sala')
@@ -640,11 +834,6 @@ def registrar_ubicacion_medico():
 @app.route('/medico/ubicaciones')
 @login_required
 def ver_ubicaciones():
-    """
-    Devuelve JSON con todos los médicos que están
-    actualmente atendiendo pacientes y en qué sala están.
-    Se consulta desde la vista v_ubicacion_activa_personal.
-    """
     with get_connection() as conn:
         with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
             try:
@@ -660,21 +849,23 @@ def ver_ubicaciones():
 def medico_activos():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM sp_catalogo_personal_activo();")
+            cur.execute("SELECT * FROM sp_catalogo_personal_activo_con_rol();")
             personal = cur.fetchall()
-    return jsonify(personal)
+    return jsonify([{"id": p[0], "nombre": p[1], "cargo": p[2]} for p in personal])
+
 
 # ==========================================
-# REPORTES / ANÁLISIS
+# REPORTES
 # ==========================================
 
 @app.route('/reportes')
-@login_required
+@admin_required
 def reportes():
     return render_template('reportes.html')
 
+
 # ==========================================
-# ANALYTICS - KPI endpoints para Highcharts
+# ANALYTICS - KPI endpoints
 # ==========================================
 
 @app.route('/api/kpi/emergencias_por_tipo')
@@ -684,12 +875,9 @@ def kpi_emergencias_tipo():
         with conn.cursor() as cur:
             cur.execute("SELECT tipo_emergencia AS tipo, total, porcentaje FROM v_kpi_emergencias_por_tipo;")
             rows = cur.fetchall()
-
     data = [{"tipo": r[0], "total": int(r[1]), "porcentaje": float(r[2])} for r in rows]
-
     db = get_mongo()
     db.kpi_emergencias_tipo.insert_one({"fecha": datetime.utcnow(), "datos": data})
-
     return jsonify(data)
 
 
@@ -700,12 +888,9 @@ def kpi_emergencias_gravedad():
         with conn.cursor() as cur:
             cur.execute("SELECT gravedad, total, porcentaje FROM v_kpi_emergencias_por_gravedad;")
             rows = cur.fetchall()
-
     data = [{"gravedad": r[0], "total": int(r[1]), "porcentaje": float(r[2])} for r in rows]
-
     db = get_mongo()
     db.kpi_emergencias_gravedad.insert_one({"fecha": datetime.utcnow(), "datos": data})
-
     return jsonify(data)
 
 
@@ -716,12 +901,9 @@ def kpi_pacientes_edad():
         with conn.cursor() as cur:
             cur.execute("SELECT rango_edad AS rango, total_pacientes AS total FROM v_kpi_pacientes_por_edad;")
             rows = cur.fetchall()
-
     data = [{"rango": r[0], "total": int(r[1])} for r in rows]
-
     db = get_mongo()
     db.kpi_pacientes_edad.insert_one({"fecha": datetime.utcnow(), "datos": data})
-
     return jsonify(data)
 
 
@@ -732,12 +914,9 @@ def kpi_medicos_top():
         with conn.cursor() as cur:
             cur.execute("SELECT nombre_completo AS medico, total_eventos_atendidos AS total FROM v_kpi_medicos_top LIMIT 8;")
             rows = cur.fetchall()
-
     data = [{"medico": r[0], "total": int(r[1])} for r in rows]
-
     db = get_mongo()
     db.kpi_medicos_top.insert_one({"fecha": datetime.utcnow(), "datos": data})
-
     return jsonify(data)
 
 
@@ -748,13 +927,41 @@ def kpi_urgencias_turno():
         with conn.cursor() as cur:
             cur.execute("SELECT turno, total_emergencias AS total FROM v_kpi_urgencias_por_turno;")
             rows = cur.fetchall()
-
     data = [{"turno": r[0], "total": int(r[1])} for r in rows]
-
     db = get_mongo()
     db.kpi_urgencias_turno.insert_one({"fecha": datetime.utcnow(), "datos": data})
-
     return jsonify(data)
+
+
+@app.route('/api/kpi/mis_emergencias')
+@medico_enfermero_required
+def kpi_mis_emergencias():
+    """KPI personal del médico/enfermero logueado."""
+    id_personal = session.get('id_personal')
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM sp_dashboard_medico(%s);", (id_personal,))
+            stats = cur.fetchone()
+
+            cur.execute("SELECT * FROM sp_emergencias_por_mes_medico(%s);", (id_personal,))
+            por_mes = [{"mes": r[0], "total": int(r[1])} for r in cur.fetchall()]
+
+            cur.execute("SELECT * FROM sp_emergencias_por_tipo_medico(%s);", (id_personal,))
+            por_tipo = [{"tipo": r[0], "total": int(r[1])} for r in cur.fetchall()]
+
+    return jsonify({
+        "total": int(stats[0]) if stats else 0,
+        "activas": int(stats[1]) if stats else 0,
+        "ultima": stats[2].strftime('%d/%m/%Y') if stats and stats[2] else "—",
+        "tipo_frecuente": stats[3] if stats else "—",
+        "por_mes": por_mes,
+        "por_tipo": por_tipo
+    })
+
+
+# ==========================================
+# EMERGENCIAS - ATENDER / RESOLVER
+# ==========================================
 
 @app.route('/emergencias/atender', methods=['POST'])
 @login_required
@@ -764,7 +971,7 @@ def atender_emergencia():
         with conn.cursor() as cur:
             try:
                 cur.execute("""
-                    UPDATE evento_emergencia 
+                    UPDATE evento_emergencia
                     SET id_estado_evento_fk = 'EST-002'
                     WHERE id_evento = %s;
                 """, (id_evento,))
@@ -784,7 +991,7 @@ def resolver_emergencia():
         with conn.cursor() as cur:
             try:
                 cur.execute("""
-                    UPDATE evento_emergencia 
+                    UPDATE evento_emergencia
                     SET id_estado_evento_fk = 'EST-003',
                         fecha_hora_egreso = NOW()
                     WHERE id_evento = %s;
@@ -795,6 +1002,7 @@ def resolver_emergencia():
             except Exception as e:
                 conn.rollback()
                 return jsonify({'ok': False, 'error': str(e)}), 500
+
 
 # ==========================================
 # MAIN

@@ -22,6 +22,7 @@
     }
     .nav-dropdown a:hover { background: #fdecea; }
 
+    /* Barra de filtros */
     .filtros-bar {
       display: flex; flex-wrap: wrap; gap: 12px;
       background: white; border: 1.5px solid var(--gray-200);
@@ -37,6 +38,7 @@
     }
     .filtro-group input:focus, .filtro-group select:focus { outline: none; border-color: var(--teal); }
 
+    /* Botón confirmar beacon */
     .btn-confirmar {
       background: #0d9488; color: white; border: none;
       padding: 5px 10px; border-radius: 6px; font-size: 11px;
@@ -44,15 +46,8 @@
     }
     .btn-confirmar:hover { background: #0f766e; }
     .btn-confirmar.confirmado { background: #16a34a; cursor: default; }
-    .btn-resolver {
-      background: #16a34a; color: white; border: none;
-      padding: 5px 10px; border-radius: 6px; font-size: 11px;
-      font-weight: 600; cursor: pointer; white-space: nowrap;
-      display: block; margin-top: 6px;
-    }
-    .btn-resolver:hover { background: #15803d; }
-    .btn-resolver:disabled { background: #9ca3af; cursor: default; }
 
+    /* Modal beacon */
     .modal-overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.45); z-index: 999;
@@ -86,6 +81,13 @@
       padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
     }
     .modal-btn-cancel:hover { background: #e2e8f0; }
+    .btn-asignar {
+      background: #4f46e5; color: white; border: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+      display: block; width: 100%;
+    }
+    .btn-asignar:hover { background: #4338ca; }
   </style>
 </head>
 <body>
@@ -95,21 +97,26 @@
         <div class="nav-logo-icon">🏥</div>
         <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
       </div>
-      <div class="nav-tabs">
-        <div class="nav-tabs">
+      <div class="nav-tabs" style="margin:0 auto;">
+        {% if session.get('rol') == 'Administrador' %}
         <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
         <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
-        <a href="{{ url_for('emergencias') }}" class="nav-tab active">Mostrar Emergencias</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab  active">Emergencias</a>
         <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
         <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
         <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
-      </div>
+        {% else %}
+        <a href="{{ url_for('dashboard') }}" class="nav-tab">Mi Panel</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab  active">Emergencias</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab">Pacientes</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        {% endif %}
       </div>
       <div class="nav-right">
         <div class="nav-user-wrap">
           <div class="nav-user">
-            <div class="nav-avatar">A</div>
-            <span>Admin</span>
+            <div class="nav-avatar">{{ session.get('usuario', 'U')[0]|upper }}</div>
+            <span>{{ session.get('usuario', 'Admin') }}</span>
           </div>
           <div class="nav-dropdown">
             <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
@@ -136,7 +143,9 @@
           <h2 class="section-title">Emergencias Registradas</h2>
           <span class="section-sub">Eventos de emergencia pediátrica ordenados por fecha de ingreso</span>
         </div>
+        {% if session.get('rol') == 'Administrador' %}
         <a href="{{ url_for('registrar_emergencia') }}" class="btn-submit" style="text-decoration:none; white-space:nowrap;">+ Registrar Emergencia</a>
+        {% endif %}
       </div>
 
       <!-- Barra de filtros -->
@@ -228,20 +237,31 @@
                   <td class="td-age">{{ e[6].strftime('%d/%m/%Y %H:%M') if e[6] else '—' }}</td>
                   <td>{{ e[7] or '—' }}</td>
                   <td>
+                    {% if session.get('rol') == 'Administrador' %}
+                      {% if 'activ' in (e[5] or '')|lower %}
+                      <button class="btn-confirmar"
+                              onclick="abrirModal('{{ e[0] }}', 'SAL-001')"
+                              id="btn-{{ e[0] }}">
+                        📡 Confirmar atención
+                      </button>
+                      <button class="btn-asignar"
+                              onclick="abrirModalAsignar('{{ e[0] }}')"
+                              style="margin-top:5px;">
+                        👤 Asignar personal
+                      </button>
+                      {% else %}
+                      <span style="color:#9ca3af; font-size:12px;">—</span>
+                      {% endif %}
+                    {% else %}
                     {% if 'activ' in (e[5] or '')|lower %}
                     <button class="btn-confirmar"
-                            onclick="abrirModal('{{ e[0] }}', 'SAL-001', '{{ e[7] or '' }}')"
+                            onclick="confirmarUbicacionDirecta('{{ e[0] }}', '{{ session.get('id_personal') }}')"
                             id="btn-{{ e[0] }}">
-                      📡 Confirmar atención
-                    </button>
-                    {% elif 'observaci' in (e[5] or '')|lower %}
-                    <button class="btn-resolver"
-                            onclick="resolverEmergencia('{{ e[0] }}')"
-                            id="btn-resolver-{{ e[0] }}">
-                      ✅ Resolver
+                      📡 Confirmar ubicación
                     </button>
                     {% else %}
                     <span style="color:#9ca3af; font-size:12px;">—</span>
+                    {% endif %}
                     {% endif %}
                   </td>
                 </tr>
@@ -261,6 +281,27 @@
     </div>
   </div>
 
+  <!-- Modal asignar personal (admin) -->
+  <div class="modal-overlay" id="modalAsignar">
+    <div class="modal-box">
+      <div class="modal-title">👤 Asignar personal a emergencia</div>
+      <div class="modal-sub" id="modalAsignarSub">Evento: —</div>
+      <label class="modal-label">Personal médico</label>
+      <select class="modal-select" id="selectAsignarPersonal">
+        <option value="">-- Selecciona --</option>
+      </select>
+      <label class="modal-label">Rol en el evento</label>
+      <select class="modal-select" id="selectRolEvento">
+        <option value="ROL-001">Médico Responsable</option>
+        <option value="ROL-003">Enfermero Asignado</option>
+      </select>
+      <div class="modal-btns">
+        <button class="modal-btn-cancel" onclick="cerrarModalAsignar()">Cancelar</button>
+        <button class="modal-btn-ok" onclick="confirmarAsignacion()">Asignar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal beacon -->
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal-box">
@@ -268,7 +309,7 @@
       <div class="modal-sub" id="modalSub">Evento: —</div>
       <div class="modal-info">
         🏥 Beacon <strong>DIS-003</strong> detectado en
-        <strong>Urgencias Pediátricas</strong> — <span id="modalHospital"></span>
+        <strong>Urgencias Pediátricas</strong> — Cruz Roja Mexicana Monterrey
       </div>
       <label class="modal-label">¿Quién está atendiendo este evento?</label>
       <select class="modal-select" id="selectPersonal">
@@ -285,6 +326,7 @@
     let eventoActual = null;
     let salaActual   = null;
 
+    // ── Filtros ──────────────────────────────────────────
     function aplicarFiltros() {
       const desde    = document.getElementById('filtro-desde').value;
       const hasta    = document.getElementById('filtro-hasta').value;
@@ -299,11 +341,11 @@
         const rowHospital = row.dataset.hospital.toLowerCase();
 
         let visible = true;
-        if (desde    && rowFecha    < desde)              visible = false;
-        if (hasta    && rowFecha    > hasta)              visible = false;
-        if (tipo     && !rowTipo.includes(tipo))          visible = false;
-        if (gravedad && !rowGravedad.includes(gravedad))  visible = false;
-        if (hospital && !rowHospital.includes(hospital))  visible = false;
+        if (desde    && rowFecha    < desde)                      visible = false;
+        if (hasta    && rowFecha    > hasta)                      visible = false;
+        if (tipo     && !rowTipo.includes(tipo))                  visible = false;
+        if (gravedad && !rowGravedad.includes(gravedad))          visible = false;
+        if (hospital && !rowHospital.includes(hospital))          visible = false;
 
         row.style.display = visible ? '' : 'none';
       });
@@ -318,11 +360,11 @@
     ['filtro-desde','filtro-hasta','filtro-tipo','filtro-gravedad','filtro-hospital']
       .forEach(id => document.getElementById(id).addEventListener('change', aplicarFiltros));
 
-    function abrirModal(idEvento, idSala, hospital) {
+    // ── Beacon / Modal ───────────────────────────────────
+    function abrirModal(idEvento, idSala) {
       eventoActual = idEvento;
       salaActual   = idSala;
       document.getElementById('modalSub').textContent = 'Evento: ' + idEvento;
-      document.getElementById('modalHospital').textContent = hospital || 'Hospital';
       document.getElementById('modalOverlay').classList.add('show');
 
       fetch('/medico/activos')
@@ -332,8 +374,8 @@
           sel.innerHTML = '<option value="">-- Selecciona el médico --</option>';
           data.forEach(m => {
             const opt = document.createElement('option');
-            opt.value       = m[0];
-            opt.textContent = m[0] + ' — ' + m[1];
+            opt.value = m.id;
+            opt.textContent = m.id + " — " + m.nombre + " (" + m.cargo + ")";
             sel.appendChild(opt);
           });
         })
@@ -362,11 +404,6 @@
         if (data.ok) {
           const btn = document.getElementById('btn-' + eventoActual);
           if (btn) { btn.textContent = '✅ Atendiendo'; btn.classList.add('confirmado'); btn.disabled = true; }
-          fetch('/emergencias/atender', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'id_evento=' + eventoActual
-          });
           cerrarModal();
         } else {
           alert('Error: ' + data.error);
@@ -379,23 +416,77 @@
       if (e.target === this) cerrarModal();
     });
 
-    function resolverEmergencia(idEvento) {
-      if (!confirm('¿Confirmas que esta emergencia ya fue resuelta?')) return;
-      fetch('/emergencias/resolver', {
+    // ── Modal asignar personal ───────────────────────────
+    let eventoAsignar = null;
+
+    function abrirModalAsignar(idEvento) {
+      eventoAsignar = idEvento;
+      document.getElementById('modalAsignarSub').textContent = 'Evento: ' + idEvento;
+      document.getElementById('modalAsignar').classList.add('show');
+
+      fetch('/medico/activos')
+        .then(r => r.json())
+        .then(data => {
+          const sel = document.getElementById('selectAsignarPersonal');
+          sel.innerHTML = '<option value="">-- Selecciona --</option>';
+          data.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.id + " — " + m.nombre + " (" + m.cargo + ")";
+            sel.appendChild(opt);
+          });
+        });
+    }
+
+    function cerrarModalAsignar() {
+      document.getElementById('modalAsignar').classList.remove('show');
+      eventoAsignar = null;
+    }
+
+    function confirmarAsignacion() {
+      const idPersonal  = document.getElementById('selectAsignarPersonal').value;
+      const idRolEvento = document.getElementById('selectRolEvento').value;
+      if (!idPersonal) { alert('Selecciona un médico o enfermero.'); return; }
+
+      fetch('/emergencias/asignar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'id_evento=' + idEvento
+        body: 'id_evento=' + eventoAsignar + '&id_personal=' + idPersonal + '&id_rol_evento=' + idRolEvento
       })
       .then(r => r.json())
       .then(data => {
         if (data.ok) {
-          const btnResolver = document.getElementById('btn-resolver-' + idEvento);
-          if (btnResolver) { btnResolver.textContent = '✓ Resuelta'; btnResolver.disabled = true; btnResolver.style.background = '#9ca3af'; }
-          const row = btnResolver ? btnResolver.closest('tr') : null;
-          if (row) {
-            const badge = row.querySelector('.badge');
-            if (badge) { badge.className = 'badge badge-green'; badge.textContent = 'Cerrado'; }
-          }
+          alert('Personal asignado correctamente.');
+          cerrarModalAsignar();
+          location.reload();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      })
+      .catch(() => alert('Error de conexión.'));
+    }
+
+    document.getElementById('modalAsignar').addEventListener('click', function(e) {
+      if (e.target === this) cerrarModalAsignar();
+    });
+
+    function confirmarUbicacionDirecta(idEvento, idPersonal) {
+      if (!idPersonal || idPersonal === 'None') {
+        alert('No se pudo detectar tu ID de personal.');
+        return;
+      }
+      if (!confirm('¿Confirmar tu ubicación en el evento ' + idEvento + '?')) return;
+
+      fetch('/medico/ubicacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'id_personal=' + idPersonal + '&id_evento=' + idEvento + '&id_sala=SAL-001'
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          const btn = document.getElementById('btn-' + idEvento);
+          if (btn) { btn.textContent = '✅ Confirmado'; btn.classList.add('confirmado'); btn.disabled = true; }
         } else {
           alert('Error: ' + data.error);
         }

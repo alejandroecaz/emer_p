@@ -50,21 +50,26 @@
         <div class="nav-logo-icon">🏥</div>
         <span class="nav-brand">SIRAPE <span>Pediátrico</span></span>
       </div>
-      <div class="nav-tabs">
-        <div class="nav-tabs">
+            <div class="nav-tabs">
+        {% if session.get('rol') == 'Administrador' %}
         <a href="{{ url_for('index') }}" class="nav-tab">Inicio</a>
         <a href="{{ url_for('pacientes') }}" class="nav-tab active">Pacientes</a>
-        <a href="{{ url_for('emergencias') }}" class="nav-tab">Mostrar Emergencias</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Emergencias</a>
         <a href="{{ url_for('obtener_medicos') }}" class="nav-tab">Médicos</a>
         <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
         <a href="{{ url_for('reportes') }}" class="nav-tab">Análisis</a>
-      </div>
+        {% else %}
+        <a href="{{ url_for('dashboard') }}" class="nav-tab">Mi Panel</a>
+        <a href="{{ url_for('emergencias') }}" class="nav-tab">Emergencias</a>
+        <a href="{{ url_for('pacientes') }}" class="nav-tab active">Pacientes</a>
+        <a href="{{ url_for('iot') }}" class="nav-tab">IoT</a>
+        {% endif %}
       </div>
       <div class="nav-right">
         <div class="nav-user-wrap">
           <div class="nav-user">
-            <div class="nav-avatar">A</div>
-            <span>Admin</span>
+            <div class="nav-avatar">{{ session.get('usuario', 'U')[0]|upper }}</div>
+            <span>{{ session.get('usuario', 'Admin') }}</span>
           </div>
           <div class="nav-dropdown">
             <a href="{{ url_for('logout') }}">🚪 Cerrar Sesión</a>
@@ -91,8 +96,10 @@
           <h2 class="section-title">Pacientes</h2>
           <span class="section-sub">Listado de pacientes registrados en el sistema</span>
         </div>
+        {% if session.get('rol') == 'Administrador' %}
         <button onclick="document.getElementById('modal-registrar').style.display='flex'"
                 class="btn-submit" style="border:none; cursor:pointer;">+ Nuevo Paciente</button>
+        {% endif %}
       </div>
 
       <!-- KPIs -->
