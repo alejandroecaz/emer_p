@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lkv3ElEg6soRu7I5IiaGgvn8CdszEJBWdGiL5ay1WcP925gC71b3qIQNxOD3t8g
+\restrict TaIuPVKCbzc2ZWfTpFgzJqr4gL56WoQDfpoGgQt1y9pEKj9IGUTP8LKG7Mj5Z6F
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -25,20 +25,19 @@ SET row_security = off;
 CREATE FUNCTION public.fn_alerta_emergencia_critica() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+    v_mensaje TEXT;
 BEGIN
+    v_mensaje := CASE
+        WHEN NEW.id_gravedad_fk = 'GRV-001' THEN '🚨 Emergencia CRÍTICA registrada: ' || NEW.id_evento || '. Requiere atención inmediata.'
+        WHEN NEW.id_gravedad_fk = 'GRV-002' THEN '⚠️ Emergencia URGENTE registrada: ' || NEW.id_evento || '.'
+        WHEN NEW.id_gravedad_fk = 'GRV-003' THEN '📋 Emergencia MODERADA registrada: ' || NEW.id_evento || '.'
+        ELSE '📋 Emergencia registrada: ' || NEW.id_evento || '.'
+    END;
+
     INSERT INTO notificacion (id_evento_fk, id_usuario_destino_fk, mensaje, fecha_envio, leida)
-    VALUES (
-        NEW.id_evento,
-        'USR-001',
-        CASE 
-            WHEN NEW.id_gravedad_fk = 'GRV-001' THEN '🚨 Emergencia CRÍTICA registrada: ' || NEW.id_evento || '. Requiere atención inmediata.'
-            WHEN NEW.id_gravedad_fk = 'GRV-002' THEN '⚠️ Emergencia URGENTE registrada: ' || NEW.id_evento || '.'
-            WHEN NEW.id_gravedad_fk = 'GRV-003' THEN '📋 Emergencia MODERADA registrada: ' || NEW.id_evento || '.'
-            ELSE '📋 Emergencia registrada: ' || NEW.id_evento || '.'
-        END,
-        NOW(),
-        false
-    );
+    VALUES (NEW.id_evento, 'USR-001', v_mensaje, NOW(), false);
+
     RETURN NEW;
 END;
 $$;
@@ -205,6 +204,25 @@ $$;
 
 
 ALTER FUNCTION public.fn_reducir_stock_medicamento() OWNER TO emer_user;
+
+--
+-- Name: fn_trigger_participacion_a_en_atencion(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.fn_trigger_participacion_a_en_atencion() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE evento_emergencia
+    SET id_estado_evento_fk = 'EST-002'
+    WHERE id_evento = NEW.id_evento_fk
+      AND id_estado_evento_fk = 'EST-001';
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.fn_trigger_participacion_a_en_atencion() OWNER TO emer_user;
 
 --
 -- Name: fn_validar_signos_vitales(); Type: FUNCTION; Schema: public; Owner: emer_user
@@ -375,6 +393,30 @@ $$;
 ALTER FUNCTION public.sp_catalogo_personal_activo() OWNER TO emer_user;
 
 --
+-- Name: sp_catalogo_personal_activo_con_rol(); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.sp_catalogo_personal_activo_con_rol() RETURNS TABLE(id_personal character varying, nombre_completo text, cargo character varying, id_cargo character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT pm.id_personal,
+           pm.nombre || ' ' || pm.apellido_paterno AS nombre_completo,
+           cc.nombre AS cargo,
+           pm.id_cargo_fk AS id_cargo
+    FROM personal_medico pm
+    JOIN catalogo_cargo cc ON pm.id_cargo_fk = cc.id_cargo
+    WHERE pm.estado = 'Activo'
+      AND pm.id_cargo_fk IN ('CAR-001', 'CAR-002')
+    ORDER BY cc.nombre, pm.apellido_paterno;
+END;
+$$;
+
+
+ALTER FUNCTION public.sp_catalogo_personal_activo_con_rol() OWNER TO emer_user;
+
+--
 -- Name: sp_catalogo_salas(); Type: FUNCTION; Schema: public; Owner: emer_user
 --
 
@@ -421,6 +463,48 @@ $$;
 
 
 ALTER FUNCTION public.sp_catalogo_tipos_emergencia() OWNER TO emer_user;
+
+--
+-- Name: sp_dashboard_medico(character varying); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.sp_dashboard_medico(p_id_personal character varying) RETURNS TABLE(total_atendidas bigint, activas_ahora bigint, ultima_emergencia timestamp with time zone, tipo_mas_frecuente character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        -- Total históricas
+        (SELECT COUNT(*) FROM participacion_evento
+         WHERE id_personal_fk = p_id_personal)::BIGINT,
+
+        -- Activas ahora (emergencias donde participa y no están cerradas)
+        (SELECT COUNT(*)
+         FROM participacion_evento pe
+         JOIN evento_emergencia ee ON pe.id_evento_fk = ee.id_evento
+         WHERE pe.id_personal_fk = p_id_personal
+           AND ee.id_estado_evento_fk != 'EST-003')::BIGINT,
+
+        -- Fecha de la última emergencia atendida
+        (SELECT MAX(ee.fecha_hora_ingreso)
+         FROM participacion_evento pe
+         JOIN evento_emergencia ee ON pe.id_evento_fk = ee.id_evento
+         WHERE pe.id_personal_fk = p_id_personal),
+
+        -- Tipo de emergencia más frecuente
+        (SELECT te.nombre
+         FROM participacion_evento pe
+         JOIN evento_emergencia ee ON pe.id_evento_fk = ee.id_evento
+         JOIN catalogo_tipo_emergencia te ON ee.id_tipo_emergencia_fk = te.id_tipo_emergencia
+         WHERE pe.id_personal_fk = p_id_personal
+         GROUP BY te.nombre
+         ORDER BY COUNT(*) DESC
+         LIMIT 1);
+END;
+$$;
+
+
+ALTER FUNCTION public.sp_dashboard_medico(p_id_personal character varying) OWNER TO emer_user;
 
 --
 -- Name: sp_dashboard_stats(); Type: FUNCTION; Schema: public; Owner: emer_user
@@ -558,6 +642,55 @@ $$;
 
 
 ALTER PROCEDURE public.sp_editar_medico(IN p_id_personal character varying, IN p_nombre character varying, IN p_apellido_paterno character varying, IN p_apellido_materno character varying, IN p_cedula character varying, IN p_telefono character varying, IN p_correo character varying, IN p_id_cargo character varying, IN p_id_turno character varying, INOUT p_ok integer, INOUT p_msg text) OWNER TO emer_user;
+
+--
+-- Name: sp_emergencias_por_mes_medico(character varying); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.sp_emergencias_por_mes_medico(p_id_personal character varying) RETURNS TABLE(mes text, total bigint)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        TO_CHAR(ee.fecha_hora_ingreso, 'Mon YYYY') AS mes,
+        COUNT(*)::BIGINT AS total
+    FROM participacion_evento pe
+    JOIN evento_emergencia ee ON pe.id_evento_fk = ee.id_evento
+    WHERE pe.id_personal_fk = p_id_personal
+      AND ee.fecha_hora_ingreso >= NOW() - INTERVAL '6 months'
+    GROUP BY TO_CHAR(ee.fecha_hora_ingreso, 'Mon YYYY'),
+             DATE_TRUNC('month', ee.fecha_hora_ingreso)
+    ORDER BY DATE_TRUNC('month', ee.fecha_hora_ingreso);
+END;
+$$;
+
+
+ALTER FUNCTION public.sp_emergencias_por_mes_medico(p_id_personal character varying) OWNER TO emer_user;
+
+--
+-- Name: sp_emergencias_por_tipo_medico(character varying); Type: FUNCTION; Schema: public; Owner: emer_user
+--
+
+CREATE FUNCTION public.sp_emergencias_por_tipo_medico(p_id_personal character varying) RETURNS TABLE(tipo character varying, total bigint)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        te.nombre AS tipo,
+        COUNT(*)::BIGINT AS total
+    FROM participacion_evento pe
+    JOIN evento_emergencia ee ON pe.id_evento_fk = ee.id_evento
+    JOIN catalogo_tipo_emergencia te ON ee.id_tipo_emergencia_fk = te.id_tipo_emergencia
+    WHERE pe.id_personal_fk = p_id_personal
+    GROUP BY te.nombre
+    ORDER BY total DESC;
+END;
+$$;
+
+
+ALTER FUNCTION public.sp_emergencias_por_tipo_medico(p_id_personal character varying) OWNER TO emer_user;
 
 --
 -- Name: sp_especialidades_personal(character varying); Type: FUNCTION; Schema: public; Owner: emer_user
@@ -2560,6 +2693,7 @@ COPY public.antecedente_medico (id_antecedente, id_paciente_fk, tipo_antecedente
 COPY public.auditoria (id_auditoria, id_usuario_fk, tabla_afectada, operacion, fecha_hora, ip_origen) FROM stdin;
 1	\N	evento_emergencia	INSERT	2026-05-19 05:55:49.511206+00	\N
 2	\N	evento_emergencia	INSERT	2026-05-19 06:02:18.796938+00	\N
+3	\N	evento_emergencia	INSERT	2026-05-19 23:25:37.492076+00	\N
 \.
 
 
@@ -2825,14 +2959,15 @@ EVT-0050	PAC-002	TEM-003	GRV-002	EST-001	HSP-001	SAL-003	\N	2026-04-20 19:49:08.
 EVT-0009	PAC-007	TEM-002	GRV-002	EST-001	HSP-002	SAL-002	\N	2026-04-21 18:49:22.134765+00	\N	\N	PER-001
 0021	PAC-006	TEM-002	GRV-002	EST-001	HSP-002	SAL-002	\N	2026-04-21 04:02:53.757014+00	\N	casi muere	PER-001
 prueba	PAC-003	TEM-002	GRV-001	EST-002	HSP-002	SAL-003	\N	2026-05-18 23:33:05.700589+00	\N	\N	PER-004
-prueba3	PAC-007	TEM-005	GRV-003	EST-001	HSP-003	SAL-002	\N	2026-05-19 00:50:47.573026+00	\N	\N	PER-002
-prueba4	PAC-004	TEM-004	GRV-003	EST-001	HSP-003	SAL-004	\N	2026-05-19 00:59:08.953003+00	\N	\N	PER-002
 prueba1	PAC-005	TEM-002	GRV-001	EST-002	HSP-003	SAL-002	\N	2026-05-19 00:37:06.72243+00	\N	\N	PER-003
 ADT-500	PAC-005	TEM-003	GRV-001	EST-002	HSP-001	SAL-003	\N	2026-05-19 05:16:17.205812+00	\N	\N	PER-001
 AVT-200	PAC-666	TEM-003	GRV-001	EST-002	HSP-002	SAL-001	\N	2026-05-19 05:38:29.767301+00	\N	\N	1w313123
 AVT-100	PAC-666	TEM-003	GRV-001	EST-002	HSP-003	SAL-002	\N	2026-05-19 05:42:13.863634+00	\N	\N	PER-006
 AVT-111	PAC-777	TEM-002	GRV-001	EST-002	HSP-002	SAL-002	\N	2026-05-19 05:55:49.511206+00	\N	\N	1w313123
 AVT-112	PAC-777	TEM-004	GRV-001	EST-003	HSP-001	SAL-001	\N	2026-05-19 06:02:18.796938+00	2026-05-19 07:15:34.646261+00	\N	1w313123
+prueba4	PAC-004	TEM-004	GRV-003	EST-003	HSP-003	SAL-004	\N	2026-05-19 00:59:08.953003+00	2026-05-19 23:09:57.13338+00	\N	PER-002
+prueba5	PAC-008	TEM-005	GRV-001	EST-003	HSP-003	SAL-003	\N	2026-05-19 23:25:37.492076+00	2026-05-19 23:44:45.760305+00	\N	1w313123
+prueba3	PAC-007	TEM-005	GRV-003	EST-002	HSP-003	SAL-002	\N	2026-05-19 00:50:47.573026+00	\N	\N	PER-002
 \.
 
 
@@ -2878,6 +3013,8 @@ COPY public.lectura_iot (id_lectura, id_dispositivo_fk, id_evento_fk, "timestamp
 13	DIS-003	AVT-100	2026-05-19 05:42:48.575582+00	Presencia-Medico	1.00	f
 14	DIS-003	AVT-111	2026-05-19 05:56:17.570394+00	Presencia-Medico	1.00	f
 15	DIS-003	AVT-112	2026-05-19 06:02:44.708162+00	Presencia-Medico	1.00	f
+16	DIS-003	prueba3	2026-05-20 00:11:13.329241+00	Presencia-Medico	1.00	f
+17	DIS-003	EVT-0009	2026-05-20 00:21:04.922656+00	Presencia-Medico	1.00	f
 \.
 
 
@@ -2938,13 +3075,18 @@ MUN-005	Reynosa	EDO-002
 COPY public.notificacion (id_notificacion, id_evento_fk, id_usuario_destino_fk, mensaje, fecha_envio, leida) FROM stdin;
 1	prueba	USR-001	🚨 Emergencia CRÍTICA registrada: prueba. Requiere atención inmediata.	2026-05-18 23:33:05.700589+00	t
 2	EVT-008	USR-001	🚨 Emergencia CRÍTICA registrada: EVT-008. Requiere atención inmediata.	2026-05-19 00:06:26.257836+00	f
-4	prueba4	USR-001	📋 Emergencia MODERADA registrada: prueba4.	2026-05-19 00:59:08.953003+00	f
 3	prueba1	USR-001	🚨 Emergencia CRÍTICA registrada: prueba1. Requiere atención inmediata.	2026-05-19 00:37:06.72243+00	t
 5	ADT-500	USR-001	🚨 Emergencia CRÍTICA registrada: ADT-500. Requiere atención inmediata.	2026-05-19 05:16:17.205812+00	t
 6	AVT-200	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-200. Requiere atención inmediata.	2026-05-19 05:38:29.767301+00	t
 7	AVT-100	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-100. Requiere atención inmediata.	2026-05-19 05:42:13.863634+00	t
 8	AVT-111	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-111. Requiere atención inmediata.	2026-05-19 05:55:49.511206+00	t
 9	AVT-112	USR-001	🚨 Emergencia CRÍTICA registrada: AVT-112. Requiere atención inmediata.	2026-05-19 06:02:18.796938+00	t
+4	prueba4	USR-001	📋 Emergencia MODERADA registrada: prueba4.	2026-05-19 00:59:08.953003+00	t
+11	prueba5	USR-001	🚨 Emergencia CRÍTICA registrada: prueba5. Requiere atención inmediata.	2026-05-19 23:25:37.492076+00	t
+12	prueba5	USR-003	🚨 Emergencia CRÍTICA registrada: prueba5. Requiere atención inmediata.	2026-05-19 23:25:37.492076+00	t
+13	prueba5	USR-004	🚨 Emergencia CRÍTICA registrada: prueba5. Requiere atención inmediata.	2026-05-19 23:25:37.492076+00	t
+14	prueba5	USR-002	🚨 Emergencia CRÍTICA registrada: prueba5. Requiere atención inmediata.	2026-05-19 23:25:37.492076+00	t
+15	prueba5	USR-ADM	🚨 Emergencia CRÍTICA registrada: prueba5. Requiere atención inmediata.	2026-05-19 23:25:37.492076+00	t
 \.
 
 
@@ -3003,6 +3145,9 @@ COPY public.participacion_evento (id_participacion, id_evento_fk, id_personal_fk
 6	EVT-004	PER-002	ROL-001	16:00:00	21:00:00
 7	EVT-005	PER-001	ROL-001	09:15:00	\N
 8	EVT-006	PER-006	ROL-001	03:30:00	12:00:00
+19	prueba4	PER-001	ROL-001	23:09:36.144576	\N
+20	prueba5	PER-001	ROL-001	23:44:39.45131	\N
+21	prueba3	1w313123	ROL-001	00:11:20.534326	\N
 \.
 
 
@@ -3167,9 +3312,11 @@ COPY public.ubicacion_personal (id_ubicacion, id_personal_fk, id_evento_fk, id_s
 10	PER-003	AVT-200	SAL-001	DIS-003	2026-05-19 05:38:54.470691+00	\N	t
 11	MED-010	AVT-100	SAL-001	DIS-003	2026-05-19 05:42:48.575582+00	\N	t
 2	PER-001	0021	SAL-001	DIS-003	2026-05-18 00:54:03.074736+00	2026-05-19 05:56:17.570394+00	f
-12	PER-001	AVT-111	SAL-001	DIS-003	2026-05-19 05:56:17.570394+00	\N	t
 6	PER-004	prueba	SAL-001	DIS-003	2026-05-18 23:49:36.829741+00	2026-05-19 06:02:44.708162+00	f
 13	PER-004	AVT-112	SAL-001	DIS-003	2026-05-19 06:02:44.708162+00	\N	t
+14	1w313123	prueba3	SAL-001	DIS-003	2026-05-20 00:11:13.329241+00	\N	t
+12	PER-001	AVT-111	SAL-001	DIS-003	2026-05-19 05:56:17.570394+00	2026-05-20 00:21:04.922656+00	f
+15	PER-001	EVT-0009	SAL-001	DIS-003	2026-05-20 00:21:04.922656+00	\N	t
 \.
 
 
@@ -3189,6 +3336,8 @@ COPY public.usuario_rol (id_usuario_fk, id_rol_sistema_fk) FROM stdin;
 USR-001	ROL-SIS-1
 USR-002	ROL-SIS-2
 USR-003	ROL-SIS-2
+USR-ADM	ROL-SIS-1
+USR-004	ROL-SIS-3
 \.
 
 
@@ -3198,8 +3347,10 @@ USR-003	ROL-SIS-2
 
 COPY public.usuario_sistema (id_usuario, correo, contrasena, id_personal_fk, estado_cuenta, ultimo_login, fecha_creacion) FROM stdin;
 USR-001	admin@cruzroja.mx	1234	PER-006	Activo	\N	2026-04-20 19:47:06.752565+00
-USR-002	c.ramirez@cruzroja.mx	1234	PER-001	Activo	\N	2026-04-20 19:47:06.752565+00
 USR-003	l.gonzalez@cruzroja.mx	1234	PER-002	Activo	\N	2026-04-20 19:47:06.752565+00
+USR-004	enfermero@cruzroja.mx	1234	PER-003	Activo	2026-05-19 22:51:24.51694+00	2026-05-19 22:35:46.040835+00
+USR-ADM	admin	1234	\N	Activo	2026-05-20 00:10:50.76164+00	2026-05-19 22:29:20.385743+00
+USR-002	c.ramirez@cruzroja.mx	1234	PER-001	Activo	2026-05-20 00:16:33.284649+00	2026-04-20 19:47:06.752565+00
 \.
 
 
@@ -3228,14 +3379,14 @@ SELECT pg_catalog.setval('public.antecedente_medico_id_antecedente_seq', 7, true
 -- Name: auditoria_id_auditoria_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.auditoria_id_auditoria_seq', 2, true);
+SELECT pg_catalog.setval('public.auditoria_id_auditoria_seq', 3, true);
 
 
 --
 -- Name: lectura_iot_id_lectura_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.lectura_iot_id_lectura_seq', 15, true);
+SELECT pg_catalog.setval('public.lectura_iot_id_lectura_seq', 17, true);
 
 
 --
@@ -3249,14 +3400,14 @@ SELECT pg_catalog.setval('public.metrica_evento_id_metrica_seq', 1, false);
 -- Name: notificacion_id_notificacion_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.notificacion_id_notificacion_seq', 10, true);
+SELECT pg_catalog.setval('public.notificacion_id_notificacion_seq', 15, true);
 
 
 --
 -- Name: participacion_evento_id_participacion_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.participacion_evento_id_participacion_seq', 18, true);
+SELECT pg_catalog.setval('public.participacion_evento_id_participacion_seq', 21, true);
 
 
 --
@@ -3305,7 +3456,7 @@ SELECT pg_catalog.setval('public.traslado_id_traslado_seq', 1, false);
 -- Name: ubicacion_personal_id_ubicacion_seq; Type: SEQUENCE SET; Schema: public; Owner: emer_user
 --
 
-SELECT pg_catalog.setval('public.ubicacion_personal_id_ubicacion_seq', 13, true);
+SELECT pg_catalog.setval('public.ubicacion_personal_id_ubicacion_seq', 15, true);
 
 
 --
@@ -3884,6 +4035,13 @@ CREATE TRIGGER trg_notificar_cierre_evento AFTER UPDATE ON public.evento_emergen
 
 
 --
+-- Name: participacion_evento trg_participacion_en_atencion; Type: TRIGGER; Schema: public; Owner: emer_user
+--
+
+CREATE TRIGGER trg_participacion_en_atencion AFTER INSERT ON public.participacion_evento FOR EACH ROW EXECUTE FUNCTION public.fn_trigger_participacion_a_en_atencion();
+
+
+--
 -- Name: uso_medicamento_evento trg_reducir_stock_medicamento; Type: TRIGGER; Schema: public; Owner: emer_user
 --
 
@@ -4429,5 +4587,5 @@ ALTER TABLE ONLY public.usuario_sistema
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lkv3ElEg6soRu7I5IiaGgvn8CdszEJBWdGiL5ay1WcP925gC71b3qIQNxOD3t8g
+\unrestrict TaIuPVKCbzc2ZWfTpFgzJqr4gL56WoQDfpoGgQt1y9pEKj9IGUTP8LKG7Mj5Z6F
 

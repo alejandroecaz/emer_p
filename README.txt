@@ -28,12 +28,12 @@ Paso a Paso para Levantar el Proyecto en Local
     Crea un usuario llamado "emer_p", con contraseña "1234"
     Otorga permiso total del usuario "emer_p" a la visualización y modificación de la base de datos "emergencias".
     Restaurar el respaldo .sql incluido en el proyecto.
-        psql -U emer_user -d emergencias -f emergencias_respaldo_final.sql
+        psql -U emer_user -d emergencias -f ProyectoFinalBaseDedatos_emergencias.sql
 
 5. Configura MongoDB:
     Crear una base llamada sirape_analytics.
     Restaurar el respaldo .gz en el proyecto.
-        mongostore --db sirape_analytics respaldofinal_sirape_analytics.gz
+        mongostore --db sirape_analytics ProyectoFinalBaseDedatos_sirape_analytics.gz
     
 6. Ejecuta el servidor Flask
     python App/app.py
